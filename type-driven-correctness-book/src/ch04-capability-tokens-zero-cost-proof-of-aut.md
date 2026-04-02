@@ -1,54 +1,51 @@
-# Capability Tokens — Zero-Cost Proof of Authority 🟡
+# 能力令牌 —— 零成本的权威证明 🟡
 
-> **What you'll learn:** How zero-sized types (ZSTs) act as compile-time proof tokens, enforcing privilege hierarchies, power sequencing, and revocable authority — all at zero runtime cost.
+> **你将学到什么：** 零大小类型（ZST）如何作为编译时证明令牌，强制执行权限层次结构、电源时序和可撤销的权威 —— 全部零运行时成本。
 >
-> **Cross-references:** [ch03](ch03-single-use-types-cryptographic-guarantee.md) (single-use types), [ch05](ch05-protocol-state-machines-type-state-for-r.md) (type-state), [ch08](ch08-capability-mixins-compile-time-hardware-.md) (mixins), [ch10](ch10-putting-it-all-together-a-complete-diagn.md) (integration)
+> **交叉引用**：[第 3 章](ch03-single-use-types-cryptographic-guarantee.md)（一次性类型）、[第 5 章](ch05-protocol-state-machines-type-state-for-r.md)（type-state）、[第 8 章](ch08-capability-mixins-compile-time-hardware-.md)（mixins）、[第 10 章](ch10-putting-it-all-together-a-complete-diagn.md)（集成）
 
-## The Problem: Who Is Allowed to Do What?
+## 问题：谁被允许做什么？
 
-In hardware diagnostics, some operations are **dangerous**:
+在硬件诊断中，某些操作是**危险的**：
 
-- Programming BMC firmware
-- Resetting PCIe links
-- Writing OTP fuses
-- Enabling high-voltage test modes
+- 编程 BMC 固件
+- 重置 PCIe 链路
+- 写入 OTP 熔丝
+- 启用高压测试模式
 
-In C/C++, these are guarded by runtime checks:
+在 C/C++ 中，这些由运行时检查保护：
 
 ```c
-// C — runtime permission check
+// C —— 运行时权限检查
 int reset_pcie_link(bmc_handle_t bmc, int slot) {
-    if (!bmc->is_admin) {        // runtime check
+    if (!bmc->is_admin) {        // 运行时检查
         return -EPERM;
     }
-    if (!bmc->link_trained) {    // another runtime check
+    if (!bmc->link_trained) {    // 另一个运行时检查
         return -EINVAL;
     }
-    // ... do the dangerous thing ...
+    // ... 做危险的事情 ...
     return 0;
 }
 ```
 
-Every function that does something dangerous must repeat these checks. Forget one,
-and you have a privilege escalation bug.
+每个执行危险操作的函数都必须重复这些检查。忘记一个，就会有权限提升 bug。
 
-## Zero-Sized Types as Proof Tokens
+## 零大小类型作为证明令牌
 
-A **capability token** is a zero-sized type (ZST) that proves the caller has
-the authority to perform an action. It costs **zero bytes** at runtime — it exists
-only in the type system:
+**能力令牌**是零大小类型（ZST），证明调用者有权执行操作。它在运行时成本为**零字节** —— 它只存在于类型系统中：
 
 ```rust,ignore
 use std::marker::PhantomData;
 
-/// Proof that the caller has admin privileges.
-/// Zero-sized — compiles away completely.
-/// Not Clone, not Copy — must be explicitly passed.
+/// 调用者具有管理员权限的证明。
+/// 零大小 —— 完全编译掉。
+/// 不是 Clone，不是 Copy —— 必须显式传递。
 pub struct AdminToken {
-    _private: (),   // prevents construction outside this module
+    _private: (),   // 防止在此模块外构造
 }
 
-/// Proof that the PCIe link is trained and ready.
+/// PCIe 链路已训练并就绪的证明。
 pub struct LinkTrainedToken {
     _private: (),
 }
@@ -56,13 +53,13 @@ pub struct LinkTrainedToken {
 pub struct BmcController { /* ... */ }
 
 impl BmcController {
-    /// Authenticate as admin — returns a capability token.
-    /// This is the ONLY way to create an AdminToken.
+    /// 认证为管理员 —— 返回能力令牌。
+    /// 这是创建 AdminToken 的唯一方式。
     pub fn authenticate_admin(
         &mut self,
         credentials: &[u8],
     ) -> Result<AdminToken, &'static str> {
-        // ... validate credentials ...
+        // ... 验证凭证 ...
         # let valid = true;
         if valid {
             Ok(AdminToken { _private: () })
@@ -71,18 +68,18 @@ impl BmcController {
         }
     }
 
-    /// Train the PCIe link — returns proof that it's trained.
+    /// 训练 PCIe 链路 —— 返回已训练的证明。
     pub fn train_link(&mut self) -> Result<LinkTrainedToken, &'static str> {
-        // ... perform link training ...
+        // ... 执行链路训练 ...
         Ok(LinkTrainedToken { _private: () })
     }
 
-    /// Reset a PCIe link — requires BOTH admin + link-trained proof.
-    /// No runtime checks needed — the tokens ARE the proof.
+    /// 重置 PCIe 链路 —— 需要管理员 + 链路训练证明。
+    /// 不需要运行时检查 —— 令牌就是证明。
     pub fn reset_pcie_link(
         &mut self,
-        _admin: &AdminToken,         // zero-cost proof of authority
-        _trained: &LinkTrainedToken,  // zero-cost proof of state
+        _admin: &AdminToken,         // 零成本的权威证明
+        _trained: &LinkTrainedToken,  // 零成本的状态证明
         slot: u32,
     ) -> Result<(), &'static str> {
         println!("Resetting PCIe link on slot {slot}");
@@ -91,43 +88,39 @@ impl BmcController {
 }
 ```
 
-Usage — the type system enforces the workflow:
+用法 —— 类型系统强制执行工作流：
 
 ```rust,ignore
 fn maintenance_workflow(bmc: &mut BmcController) -> Result<(), &'static str> {
-    // Step 1: Authenticate — get admin proof
+    // 步骤 1：认证 —— 获取管理员证明
     let admin = bmc.authenticate_admin(b"secret")?;
 
-    // Step 2: Train link — get trained proof
+    // 步骤 2：训练链路 —— 获取训练证明
     let trained = bmc.train_link()?;
 
-    // Step 3: Reset — compiler requires both tokens
+    // 步骤 3：重置 —— 编译器需要两个令牌
     bmc.reset_pcie_link(&admin, &trained, 0)?;
 
     Ok(())
 }
 
-// This WON'T compile:
+// 这不会编译：
 fn unprivileged_attempt(bmc: &mut BmcController) -> Result<(), &'static str> {
     let trained = bmc.train_link()?;
     // bmc.reset_pcie_link(???, &trained, 0)?;
-    //                     ^^^ no AdminToken — can't call this
+    //                     ^^^ 没有 AdminToken —— 不能调用这个
     Ok(())
 }
 ```
 
-The `AdminToken` and `LinkTrainedToken` are **zero bytes** in the compiled binary.
-They exist only during type-checking. The function signature `fn reset_pcie_link(&mut self, _admin: &AdminToken, ...)` is a **proof obligation** — "you may only
-call this if you can produce an `AdminToken`" — and the only way to produce one is
-through `authenticate_admin()`.
+`AdminToken` 和 `LinkTrainedToken` 在编译后的二进制文件中是**零字节**。它们只存在于类型检查期间。函数签名 `fn reset_pcie_link(&mut self, _admin: &AdminToken, ...)` 是**证明义务** —— "只有当你能生成 `AdminToken` 时才能调用这个" —— 生成它的唯一方式是通过 `authenticate_admin()`。
 
-## Power Sequencing Authority
+## 电源时序权威
 
-Server power sequencing has strict ordering: standby → auxiliary → main → CPU.
-Reversing the sequence can damage hardware. Capability tokens enforce ordering:
+服务器电源时序有严格的顺序：standby → auxiliary → main → CPU。反转顺序会损坏硬件。能力令牌强制执行顺序：
 
 ```rust,ignore
-/// State tokens — each one proves the previous step completed.
+/// 状态令牌 —— 每个令牌证明前一步已完成。
 pub struct StandbyOn { _p: () }
 pub struct AuxiliaryOn { _p: () }
 pub struct MainOn { _p: () }
@@ -136,13 +129,13 @@ pub struct CpuPowered { _p: () }
 pub struct PowerController { /* ... */ }
 
 impl PowerController {
-    /// Step 1: Enable standby power. No precondition.
+    /// 步骤 1：启用 standby 电源。无前置条件。
     pub fn enable_standby(&mut self) -> Result<StandbyOn, &'static str> {
         println!("Standby power ON");
         Ok(StandbyOn { _p: () })
     }
 
-    /// Step 2: Enable auxiliary — requires standby proof.
+    /// 步骤 2：启用 auxiliary —— 需要 standby 证明。
     pub fn enable_auxiliary(
         &mut self,
         _standby: &StandbyOn,
@@ -151,7 +144,7 @@ impl PowerController {
         Ok(AuxiliaryOn { _p: () })
     }
 
-    /// Step 3: Enable main — requires auxiliary proof.
+    /// 步骤 3：启用 main —— 需要 auxiliary 证明。
     pub fn enable_main(
         &mut self,
         _aux: &AuxiliaryOn,
@@ -160,7 +153,7 @@ impl PowerController {
         Ok(MainOn { _p: () })
     }
 
-    /// Step 4: Power CPU — requires main proof.
+    /// 步骤 4：CPU 上电 —— 需要 main 证明。
     pub fn power_cpu(
         &mut self,
         _main: &MainOn,
@@ -178,30 +171,29 @@ fn power_on_sequence(ctrl: &mut PowerController) -> Result<CpuPowered, &'static 
     Ok(cpu)
 }
 
-// Trying to skip a step:
+// 尝试跳过步骤：
 // fn wrong_order(ctrl: &mut PowerController) {
-//     ctrl.power_cpu(???);  // ❌ can't produce MainOn without enable_main()
+//     ctrl.power_cpu(???);  // ❌ 没有 enable_main() 无法生成 MainOn
 // }
 ```
 
-## Hierarchical Capabilities
+## 层次化能力
 
-Real systems have **hierarchies** — an admin can do everything a user can do,
-plus more. Model this with a trait hierarchy:
+真实系统有**层次结构** —— 管理员可以做用户能做的所有事情， plus more。用 trait 层次结构建模：
 
 ```rust,ignore
-/// Base capability — anyone who is authenticated.
+/// 基础能力 —— 任何认证的人。
 pub trait Authenticated {
     fn token_id(&self) -> u64;
 }
 
-/// Operator can read sensors and run non-destructive diagnostics.
+/// Operator 可以读取传感器和运行非破坏性诊断。
 pub trait Operator: Authenticated {}
 
-/// Admin can do everything an operator can, plus destructive operations.
+/// Admin 可以做 operator 能做的所有事情， plus 破坏性操作。
 pub trait Admin: Operator {}
 
-// Concrete tokens:
+// 具体令牌：
 pub struct UserToken { id: u64 }
 pub struct OperatorToken { id: u64 }
 pub struct AdminCapToken { id: u64 }
@@ -216,35 +208,32 @@ impl Admin for AdminCapToken {}
 pub struct Bmc { /* ... */ }
 
 impl Bmc {
-    /// Anyone authenticated can read sensors.
+    /// 任何认证的人都可以读取传感器。
     pub fn read_sensor(&self, _who: &impl Authenticated, id: u32) -> f64 {
         42.0 // stub
     }
 
-    /// Only operators and above can run diagnostics.
+    /// 只有 operator 及以上可以运行诊断。
     pub fn run_diag(&mut self, _who: &impl Operator, test: &str) -> bool {
         true // stub
     }
 
-    /// Only admins can flash firmware.
+    /// 只有 admin 可以刷写固件。
     pub fn flash_firmware(&mut self, _who: &impl Admin, image: &[u8]) -> Result<(), &'static str> {
         Ok(()) // stub
     }
 }
 ```
 
-An `AdminCapToken` can be passed to any function — it satisfies `Authenticated`,
-`Operator`, and `Admin`. A `UserToken` can only call `read_sensor()`. The compiler
-enforces the entire privilege model **at zero runtime cost**.
+`AdminCapToken` 可以传递给任何函数 —— 它满足 `Authenticated`、`Operator` 和 `Admin`。`UserToken` 只能调用 `read_sensor()`。编译器强制执行整个权限模型，**零运行时成本**。
 
-## Lifetime-Bounded Capability Tokens
+## 生命周期绑定的能力令牌
 
-Sometimes a capability should be **scoped** — valid only within a certain lifetime.
-Rust's borrow checker handles this naturally:
+有时能力应该有**作用域** —— 只在特定生命周期内有效。Rust 的借用检查器自然地处理这个：
 
 ```rust,ignore
-/// A scoped admin session. The token borrows the session,
-/// so it cannot outlive it.
+/// 作用域管理员会话。令牌借用会话，
+/// 所以不能超过它的生命周期。
 pub struct AdminSession {
     _active: bool,
 }
@@ -255,11 +244,11 @@ pub struct ScopedAdminToken<'session> {
 
 impl AdminSession {
     pub fn begin(credentials: &[u8]) -> Result<Self, &'static str> {
-        // ... authenticate ...
+        // ... 认证 ...
         Ok(AdminSession { _active: true })
     }
 
-    /// Create a scoped token — lives only as long as the session.
+    /// 创建作用域令牌 —— 生命周期与会话一样长。
     pub fn token(&self) -> ScopedAdminToken<'_> {
         ScopedAdminToken { _session: self }
     }
@@ -269,43 +258,43 @@ fn scoped_example() -> Result<(), &'static str> {
     let session = AdminSession::begin(b"credentials")?;
     let token = session.token();
 
-    // Use token within this scope...
-    // When session drops, token is invalidated by the borrow checker.
-    // No need for runtime expiry checks.
+    // 在此作用域内使用令牌...
+    // 当 session 丢弃时，令牌被借用检查器失效。
+    // 不需要运行时过期检查。
 
     // drop(session);
-    // ❌ ERROR: cannot move out of `session` because it is borrowed
-    //    (by `token`, which holds &session)
+    // ❌ 错误：不能从 `session` 移出，因为它被借用了
+    //    （被 `token`，它持有 &session）
     //
-    // Even if we skip drop() and just try to use `token` after
-    // session goes out of scope — same error: lifetime mismatch.
+    // 即使我们跳过 drop() 并尝试在会话超出作用域后
+    // 使用 `token` —— 同样的错误：生命周期不匹配。
 
     Ok(())
 }
 ```
 
-### When to Use Capability Tokens
+### 何时使用能力令牌
 
-| Scenario | Pattern |
+| 场景 | 模式 |
 |----------|---------|
-| Privileged hardware operations | ZST proof token (AdminToken) |
-| Multi-step sequencing | Chain of state tokens (StandbyOn → AuxiliaryOn → ...) |
-| Role-based access control | Trait hierarchy (Authenticated → Operator → Admin) |
-| Time-limited privileges | Lifetime-bounded tokens (`ScopedAdminToken<'a>`) |
-| Cross-module authority | Public token type, private constructor |
+| 特权硬件操作 | ZST 证明令牌（AdminToken） |
+| 多步骤时序 | 令牌链（StandbyOn → AuxiliaryOn → ...） |
+| 基于角色的访问控制 | Trait 层次结构（Authenticated → Operator → Admin） |
+| 时间限制的特权 | 生命周期绑定令牌（`ScopedAdminToken<'a>`） |
+| 跨模块权威 | 公开令牌类型，私有构造器 |
 
-### Cost Summary
+### 成本摘要
 
-| What | Runtime cost |
+| 什么 | 运行时成本 |
 |------|:------:|
-| ZST token in memory | 0 bytes |
-| Token parameter passing | Optimised away by LLVM |
-| Trait hierarchy dispatch | Static dispatch (monomorphised) |
-| Lifetime enforcement | Compile-time only |
+| 内存中的 ZST 令牌 | 0 字节 |
+| 令牌参数传递 | 被 LLVM 优化掉 |
+| Trait 层次结构分发 | 静态分发（单体化） |
+| 生命周期强制执行 | 仅编译时 |
 
-**Total runtime overhead: zero.** The privilege model exists only in the type system.
+**总运行时开销：零。** 权限模型只存在于类型系统中。
 
-## Capability Token Hierarchy
+## 能力令牌层次结构
 
 ```mermaid
 flowchart TD
@@ -324,24 +313,24 @@ flowchart TD
     style ERR fill:#ffcdd2,color:#000
 ```
 
-## Exercise: Tiered Diagnostic Permissions
+## 练习：分层诊断权限
 
-Design a three-tier capability system: `ViewerToken`, `TechToken`, `EngineerToken`.
-- Viewers can call `read_status()`
-- Techs can also call `run_quick_diag()`
-- Engineers can also call `flash_firmware()`
-- Higher tiers can do everything lower tiers can (use trait bounds or token conversion).
+设计一个三层能力系统：`ViewerToken`、`TechToken`、`EngineerToken`。
+- Viewer 可以调用 `read_status()`
+- Tech 也可以调用 `run_quick_diag()`
+- Engineer 也可以调用 `flash_firmware()`
+- 更高级别可以做更低级别能做的所有事情（使用 trait 约束或令牌转换）。
 
 <details>
-<summary>Solution</summary>
+<summary>解决方案</summary>
 
 ```rust,ignore
-// Tokens — zero-sized, private constructors
+// 令牌 —— 零大小，私有构造器
 pub struct ViewerToken { _private: () }
 pub struct TechToken { _private: () }
 pub struct EngineerToken { _private: () }
 
-// Capability traits — hierarchical
+// 能力 traits —— 层次结构
 pub trait CanView {}
 pub trait CanDiag: CanView {}
 pub trait CanFlash: CanDiag {}
@@ -362,19 +351,19 @@ pub fn run_quick_diag(_tok: &impl CanDiag) -> String {
 }
 
 pub fn flash_firmware(_tok: &impl CanFlash, _image: &[u8]) {
-    // Only engineers reach here
+    // 只有 engineer 能到达这里
 }
 ```
 
 </details>
 
-## Key Takeaways
+## 关键要点
 
-1. **ZST tokens cost zero bytes** — they exist only in the type system; LLVM optimises them away completely.
-2. **Private constructors = unforgeable** — only your module's `authenticate()` can mint a token.
-3. **Trait hierarchies model permission levels** — `CanFlash: CanDiag: CanView` mirrors real RBAC.
-4. **Lifetime-bounded tokens revoke automatically** — `ScopedAdminToken<'session>` can't outlive the session.
-5. **Combine with type-state (ch05)** for protocols that require authentication *and* sequenced operations.
+1. **ZST 令牌成本为零字节** —— 它们只存在于类型系统中；LLVM 完全优化掉它们。
+2. **私有构造器 = 不可伪造** —— 只有你模块的 `authenticate()` 能铸造令牌。
+3. **Trait 层次结构建模权限级别** —— `CanFlash: CanDiag: CanView` 镜像真实 RBAC。
+4. **生命周期绑定令牌自动撤销** —— `ScopedAdminToken<'session>` 不能超过会话的生命周期。
+5. **与 type-state 结合（第 5 章）** 用于需要认证*和*时序操作的协议。
 
 ---
 

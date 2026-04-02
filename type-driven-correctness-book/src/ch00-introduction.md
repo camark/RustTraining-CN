@@ -1,92 +1,92 @@
-# Type-Driven Correctness in Rust
+# Rust 中的类型驱动正确性
 
-## Speaker Intro
+## 演讲者介绍
 
-- Principal Firmware Architect in Microsoft SCHIE (Silicon and Cloud Hardware Infrastructure Engineering) team
-- Industry veteran with expertise in security, systems programming (firmware, operating systems, hypervisors), CPU and platform architecture, and C++ systems
-- Started programming in Rust in 2017 (@AWS EC2), and have been in love with the language ever since
+- 微软 SCHIE（硅和云硬件基础设施工程）团队首席固件架构师
+- 行业资深专家，专长于安全、系统编程（固件、操作系统、虚拟机）、CPU 和平台架构以及 C++ 系统
+- 2017 年开始使用 Rust 编程（@AWS EC2），从此爱上了这门语言
 
 ---
 
-A practical guide to using Rust's type system to make entire classes of bugs **impossible to compile**. While the companion [Rust Patterns](../../rust-patterns-book/src/SUMMARY.md) book covers the mechanics (traits, associated types, type-state), this guide shows how to **apply** those mechanics to real-world domains — hardware diagnostics, cryptography, protocol validation, and embedded systems.
+一份实用指南，介绍如何使用 Rust 的类型系统让整个类别的 bug**无法编译**。伴随的 [Rust Patterns](../../rust-patterns-book/src/SUMMARY.md) 书籍涵盖了机制（traits、关联类型、type-state），本指南展示如何**应用**这些机制到现实世界领域 —— 硬件诊断、密码学、协议验证和嵌入式系统。
 
-Every pattern here follows one principle: **push invariants from runtime checks into the type system so the compiler enforces them.**
+每个模式都遵循一个原则：**将不变量从运行时检查推入类型系统，让编译器强制执行它们。**
 
-## How to Use This Book
+## 如何使用本书
 
-### Difficulty Legend
+### 难度图例
 
-| Symbol | Level | Audience |
-|:------:|-------|----------|
-| 🟢 | Introductory | Comfortable with ownership + traits |
-| 🟡 | Intermediate | Familiar with generics + associated types |
-| 🔴 | Advanced | Ready for type-state, phantom types, and session types |
+| 符号 | 级别 | 受众 |
+|:------:|-------|------|
+| 🟢 | 入门 | 熟悉所有权 + traits |
+| 🟡 | 中级 | 熟悉泛型 + 关联类型 |
+| 🔴 | 高级 | 准备好应对 type-state、phantom types 和 session types |
 
-### Pacing Guide
+### 进度指南
 
-| Goal | Path | Time |
+| 目标 | 路径 | 时间 |
 |------|------|------|
-| **Quick overview** | ch01, ch13 (reference card) | 30 min |
-| **IPMI / BMC developer** | ch02, ch05, ch07, ch10, ch17 | 2.5 hrs |
-| **GPU / PCIe developer** | ch02, ch06, ch09, ch10, ch15 | 2.5 hrs |
-| **Redfish implementer** | ch02, ch05, ch07, ch08, ch17, ch18 | 3 hrs |
-| **Framework / infrastructure** | ch04, ch08, ch11, ch14, ch18 | 2.5 hrs |
-| **New to correct-by-construction** | ch01 → ch10 in order, then ch12 exercises | 4 hrs |
-| **Full deep dive** | All chapters sequentially | 7 hrs |
+| **快速概览** | 第 1 章、第 13 章（参考卡） | 30 分钟 |
+| **IP / BMC 开发者** | 第 2、5、7、10、17 章 | 2.5 小时 |
+| **GPU / PCIe 开发者** | 第 2、6、9、10、15 章 | 2.5 小时 |
+| **Redfish 实现者** | 第 2、5、7、8、17、18 章 | 3 小时 |
+| **框架/基础设施** | 第 4、8、11、14、18 章 | 2.5 小时 |
+| **初次接触正确构造** | 按顺序阅读第 1→10 章，然后第 12 章练习 | 4 小时 |
+| **完整深入** | 按顺序阅读所有章节 | 7 小时 |
 
-### Annotated Table of Contents
+### 带注释的目录
 
-| Ch | Title | Difficulty | Key Idea |
+| 章 | 标题 | 难度 | 关键思想 |
 |----|-------|:----------:|----------|
-| 1 | The Philosophy — Why Types Beat Tests | 🟢 | Three levels of correctness; types as compiler-checked guarantees |
-| 2 | Typed Command Interfaces | 🟡 | Associated types bind request → response |
-| 3 | Single-Use Types | 🟡 | Move semantics as linear types for crypto |
-| 4 | Capability Tokens | 🟡 | Zero-sized proof-of-authority tokens |
-| 5 | Protocol State Machines | 🔴 | Type-state for IPMI sessions + PCIe LTSSM |
-| 6 | Dimensional Analysis | 🟢 | Newtype wrappers prevent unit mix-ups |
-| 7 | Validated Boundaries | 🟡 | Parse once at the edge, carry proof in types |
-| 8 | Capability Mixins | 🟡 | Ingredient traits + blanket impls |
-| 9 | Phantom Types | 🟡 | PhantomData for register width, DMA direction |
-| 10 | Putting It All Together | 🟡 | All 7 patterns in one diagnostic platform |
-| 11 | Fourteen Tricks from the Trenches | 🟡 | Sentinel→Option, sealed traits, builders, etc. |
-| 12 | Exercises | 🟡 | Six capstone problems with solutions |
-| 13 | Reference Card | — | Pattern catalogue + decision flowchart |
-| 14 | Testing Type-Level Guarantees | 🟡 | trybuild, proptest, cargo-show-asm |
-| 15 | Const Fn | 🟠 | Compile-time proofs for memory maps, registers, bitfields |
-| 16 | Send & Sync | 🟠 | Compile-time concurrency proofs |
-| 17 | Redfish Client Walkthrough | 🟡 | Eight patterns composed into a type-safe Redfish client |
-| 18 | Redfish Server Walkthrough | 🟡 | Builder type-state, source tokens, health rollup, mixins |
+| 1 | 理念 —— 为什么类型胜过测试 | 🟢 | 三个正确性级别；类型作为编译器检查的保证 |
+| 2 | 类型化命令接口 | 🟡 | 关联类型绑定请求 → 响应 |
+| 3 | 一次性类型 | 🟡 | 使用移动语义作为密码学的线性类型 |
+| 4 | 能力令牌 | 🟡 | 零成本权威证明令牌 |
+| 5 | 协议状态机 | 🔴 | 用于 IPMI 会话 + PCIe LTSSM 的 type-state |
+| 6 | 量纲分析 | 🟢 | 新类型包装器防止单位混淆 |
+| 7 | 验证边界 | 🟡 | 在边缘解析一次，在类型中携带证明 |
+| 8 | 能力混合 | 🟡 | 成分 traits + 空白实现 |
+| 9 | Phantom 类型 | 🟡 | 用于寄存器宽度、DMA 方向的 PhantomData |
+| 10 | 整合所有内容 | 🟡 | 一个诊断平台中的所有 7 个模式 |
+| 11 | 来自实践的十四个技巧 | 🟡 | Sentinel→Option、密封 traits、构建器等 |
+| 12 | 练习 | 🟡 | 六个顶点问题及解决方案 |
+| 13 | 参考卡 | — | 模式目录 + 决策流程图 |
+| 14 | 测试类型级保证 | 🟡 | trybuild、proptest、cargo-show-asm |
+| 15 | Const Fn | 🟠 | 内存映射、寄存器、位字段的编译时证明 |
+| 16 | Send & Sync | 🟠 | 编译时并发证明 |
+| 17 | Redfish 客户端演练 | 🟡 | 八种模式组合成类型安全的 Redfish 客户端 |
+| 18 | Redfish 服务器演练 | 🟡 | 构建器 type-state、源令牌、健康汇总、混合 |
 
-## Prerequisites
+## 前提条件
 
-| Concept | Where to learn it |
+| 概念 | 在哪里学习 |
 |---------|-------------------|
-| Ownership and borrowing | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md), ch01 |
-| Traits and associated types | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md), ch02 |
-| Newtypes and type-state | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md), ch03 |
-| PhantomData | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md), ch04 |
-| Generics and trait bounds | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md), ch01 |
+| 所有权和借用 | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md)，第 1 章 |
+| Traits 和关联类型 | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md)，第 2 章 |
+| 新类型和 type-state | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md)，第 3 章 |
+| PhantomData | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md)，第 4 章 |
+| 泛型和 trait 约束 | [Rust Patterns](../rust-patterns-book/src/SUMMARY.md)，第 1 章 |
 
-## The Correct-by-Construction Spectrum
+## 正确构造谱系
 
 ```text
-← Less Safe                                                    More Safe →
+← 较不安全                                                    较安全 →
 
-Runtime checks      Unit tests        Property tests      Correct by Construction
-─────────────       ──────────        ──────────────      ──────────────────────
+运行时检查      单元测试        属性测试      正确构造
+─────────────   ──────────      ──────────────   ──────────────────────
 
-if temp > 100 {     #[test]           proptest! {         struct Celsius(f64);
-  panic!("too       fn test_temp() {    |t in 0..200| {   // Can't confuse with Rpm
-  hot");              assert!(          assert!(...)       // at the type level
-}                     check(42));     }
-                    }                 }
-                                                          Invalid program?
-Invalid program?    Invalid program?  Invalid program?    Won't compile.
-Crashes in prod.    Fails in CI.      Fails in CI         Never exists.
-                                      (probabilistic).
+if temp > 100 {  #[test]        proptest! {    struct Celsius(f64);
+  panic!("too    fn test_temp() { |t in 0..200| {  // 不能在类型级别
+  hot");           assert!(       assert!(...)   // 与 Rpm 混淆
+}                  check(42);   }
+                 }            }
+
+无效程序？     无效程序？     无效程序？     无效程序？
+生产环境崩溃。   CI 中失败。    CI 中失败      无法编译。
+（概率性）。
 ```
 
-This guide operates at the rightmost position — where bugs don't exist because the type system **cannot express them**.
+本指南在最右侧位置运作 —— bug 不存在，因为类型系统**无法表达它们**。
 
 ---
 

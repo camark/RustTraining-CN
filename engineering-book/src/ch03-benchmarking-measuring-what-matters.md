@@ -1,58 +1,48 @@
-# Benchmarking — Measuring What Matters 🟡
+# 基准测试 —— 测量重要的内容 🟡
 
-> **What you'll learn:**
-> - Why naive timing with `Instant::now()` produces unreliable results
-> - Statistical benchmarking with Criterion.rs and the lighter Divan alternative
-> - Profiling hot spots with `perf`, flamegraphs, and PGO
-> - Setting up continuous benchmarking in CI to catch regressions automatically
+> **你将学到什么：**
+> - 为什么使用 `Instant::now()` 的朴素计时会产生不可靠的结果
+> - 使用 Criterion.rs 和更轻量的 Divan 替代方案进行统计基准测试
+> - 使用 `perf`、火焰图和 PGO 分析热点
+> - 在 CI 中设置持续基准测试以自动捕获性能回归
 >
-> **Cross-references:** [Release Profiles](ch07-release-profiles-and-binary-size.md) — once you find the hot spot, optimize the binary · [CI/CD Pipeline](ch11-putting-it-all-together-a-production-cic.md) — benchmark job in the pipeline · [Code Coverage](ch04-code-coverage-seeing-what-tests-miss.md) — coverage tells you what's tested, benchmarks tell you what's fast
+> **交叉引用：** [发布配置文件](ch07-release-profiles-and-binary-size.md) —— 找到热点后优化二进制文件 · [CI/CD 管道](ch11-putting-it-all-together-a-production-cic.md) —— 管道中的基准测试任务 · [代码覆盖率](ch04-code-coverage-seeing-what-tests-miss.md) —— 覆盖率告诉你测试了什么，基准测试告诉你什么快
 
-"We should forget about small efficiencies, say about 97% of the time: premature
-optimization is the root of all evil. Yet we should not pass up our opportunities
-in that critical 3%." — Donald Knuth
+> "我们应该忘记小效率，大约 97% 的情况：过早优化是万恶之源。然而，我们不应放弃那关键 3% 的机会。" —— Donald Knuth
 
-The hard part isn't *writing* benchmarks — it's writing benchmarks that produce
-**meaningful, reproducible, actionable** numbers. This chapter covers the tools
-and techniques that get you from "it seems fast" to "we have statistical evidence
-that PR #347 regressed parsing throughput by 4.2%."
+困难的部分不是*编写*基准测试 —— 而是编写能产生**有意义、可重现、可操作**数字的基准测试。本章涵盖让你从"看起来很快"到"我们有统计证据表明 PR #347 使解析吞吐量下降了 4.2%"的工具和技术。
 
-### Why Not `std::time::Instant`?
+### 为什么不使用 `std::time::Instant`？
 
-The temptation:
+诱惑：
 
 ```rust
-// ❌ Naive benchmarking — unreliable results
+// ❌ 朴素基准测试 —— 结果不可靠
 use std::time::Instant;
 
 fn main() {
     let start = Instant::now();
     let result = parse_device_query_output(&sample_data);
     let elapsed = start.elapsed();
-    println!("Parsing took {:?}", elapsed);
-    // Problem 1: Compiler may optimize away `result` (dead code elimination)
-    // Problem 2: Single sample — no statistical significance
-    // Problem 3: CPU frequency scaling, thermal throttling, other processes
-    // Problem 4: Cold cache vs warm cache not controlled
+    println!("解析耗时 {:?}", elapsed);
+    // 问题 1：编译器可能优化掉 `result`（死代码消除）
+    // 问题 2：单个样本 —— 无统计显著性
+    // 问题 3：CPU 频率缩放、热节流、其他进程
+    // 问题 4：冷缓存与热缓存未受控
 }
 ```
 
-Problems with manual timing:
-1. **Dead code elimination** — the compiler may skip the computation entirely if
-   the result isn't used.
-2. **No warm-up** — the first run includes cache misses, JIT effects (irrelevant
-   in Rust, but OS page faults apply), and lazy initialization.
-3. **No statistical analysis** — a single measurement tells you nothing about
-   variance, outliers, or confidence intervals.
-4. **No regression detection** — you can't compare against previous runs.
+手动计时的问题：
+1. **死代码消除** —— 如果结果未被使用，编译器可能完全跳过计算。
+2. **无预热** —— 第一次运行包括缓存未命中、JIT 效应（在 Rust 中不相关，但 OS 页故障适用）和惰性初始化。
+3. **无统计分析** —— 单次测量不能告诉你方差、异常值或置信区间。
+4. **无回归检测** —— 你无法与之前的运行进行比较。
 
-### Criterion.rs — Statistical Benchmarking
+### Criterion.rs —— 统计基准测试
 
-[Criterion.rs](https://bheisler.github.io/criterion.rs/book/) is the de facto
-standard for Rust micro-benchmarks. It uses statistical methods to produce
-reliable measurements and detects performance regressions automatically.
+[Criterion.rs](https://bheisler.github.io/criterion.rs/book/) 是 Rust 微基准测试的事实标准。它使用统计方法产生可靠的测量结果，并自动检测性能回归。
 
-**Setup:**
+**设置：**
 
 ```toml
 # Cargo.toml
@@ -61,16 +51,16 @@ criterion = { version = "0.5", features = ["html_reports", "cargo_bench_support"
 
 [[bench]]
 name = "parsing_bench"
-harness = false  # Use Criterion's harness, not the built-in test harness
+harness = false  # 使用 Criterion 的测试框架，而非内置的测试框架
 ```
 
-**A complete benchmark:**
+**完整的基准测试：**
 
 ```rust
 // benches/parsing_bench.rs
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 
-/// Data type for parsed GPU information
+/// 用于解析 GPU 信息的数据类型
 #[derive(Debug, Clone)]
 struct GpuInfo {
     index: u32,
@@ -79,7 +69,7 @@ struct GpuInfo {
     power_w: f64,
 }
 
-/// The function under test — simulate parsing device-query CSV output
+/// 被测函数 —— 模拟解析 device-query CSV 输出
 fn parse_gpu_csv(input: &str) -> Vec<GpuInfo> {
     input
         .lines()
@@ -101,7 +91,7 @@ fn parse_gpu_csv(input: &str) -> Vec<GpuInfo> {
 }
 
 fn bench_parse_gpu_csv(c: &mut Criterion) {
-    // Representative test data
+    // 代表性测试数据
     let small_input = "0, Acme Accel-V1-80GB, 32, 65.5\n\
                        1, Acme Accel-V1-80GB, 34, 67.2\n";
 
@@ -122,33 +112,31 @@ criterion_group!(benches, bench_parse_gpu_csv);
 criterion_main!(benches);
 ```
 
-**Running and reading results:**
+**运行和阅读结果：**
 
 ```bash
-# Run all benchmarks
+# 运行所有基准测试
 cargo bench
 
-# Run a specific benchmark by name
+# 按名称运行特定基准测试
 cargo bench -- parse_64
 
-# Output:
+# 输出：
 # parse_2_gpus        time:   [1.2345 µs  1.2456 µs  1.2578 µs]
 #                      ▲            ▲           ▲
-#                      │       confidence interval
-#                   lower 95%    median    upper 95%
+#                      │       置信区间
+#                   下 95%    中位数    上 95%
 #
 # parse_64_gpus       time:   [38.123 µs  38.456 µs  38.812 µs]
 #                     change: [-1.2345% -0.5678% +0.1234%] (p = 0.12 > 0.05)
-#                     No change in performance detected.
+#                     性能未检测到变化。
 ```
 
-**What `black_box()` does**: It's a compiler hint that prevents dead-code
-elimination and over-aggressive constant folding. The compiler cannot see
-through `black_box`, so it must actually compute the result.
+**`black_box()` 的作用**：它是一个编译器提示，防止死代码消除和过度积极的常量折叠。编译器无法看透 `black_box`，因此它必须实际计算结果。
 
-### Parameterized Benchmarks and Benchmark Groups
+### 参数化基准测试和基准测试组
 
-Compare multiple implementations or input sizes:
+比较多种实现或输入大小：
 
 ```rust
 // benches/comparison_bench.rs
@@ -157,11 +145,11 @@ use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId, Through
 fn bench_parsing_strategies(c: &mut Criterion) {
     let mut group = c.benchmark_group("csv_parsing");
 
-    // Test across different input sizes
+    // 测试不同输入大小
     for num_gpus in [1, 8, 32, 64, 128] {
         let input = generate_gpu_csv(num_gpus);
 
-        // Set throughput for bytes-per-second reporting
+        // 设置吞吐量用于字节/秒报告
         group.throughput(Throughput::Bytes(input.len() as u64));
 
         group.bench_with_input(
@@ -189,13 +177,11 @@ criterion_group!(benches, bench_parsing_strategies);
 criterion_main!(benches);
 ```
 
-**Output**: Criterion generates an HTML report at `target/criterion/report/index.html`
-with violin plots, comparison charts, and regression analysis — open in a browser.
+**输出**：Criterion 在 `target/criterion/report/index.html` 生成 HTML 报告，包含小提琴图、比较图表和回归分析 —— 在浏览器中打开。
 
-### Divan — A Lighter Alternative
+### Divan —— 更轻量的替代方案
 
-[Divan](https://github.com/nvzqz/divan) is a newer benchmarking framework that
-uses attribute macros instead of Criterion's macro DSL:
+[Divan](https://github.com/nvzqz/divan) 是一个较新的基准测试框架，使用属性宏而非 Criterion 的宏 DSL：
 
 ```toml
 # Cargo.toml
@@ -235,111 +221,109 @@ fn parse_n_gpus(n: usize) -> Vec<GpuInfo> {
     parse_gpu_csv(black_box(&input))
 }
 
-// Divan output is a clean table:
+// Divan 输出是干净的表格：
 // ╰─ parse_2_gpus   fastest  │ slowest  │ median   │ mean     │ samples │ iters
 //                   1.234 µs │ 1.567 µs │ 1.345 µs │ 1.350 µs │ 100     │ 1600
 ```
 
-**When to choose Divan over Criterion:**
-- Simpler API (attribute macros, less boilerplate)
-- Faster compilation (fewer dependencies)
-- Good for quick perf checks during development
+**何时选择 Divan 而非 Criterion：**
+- 更简单的 API（属性宏，更少的样板代码）
+- 更快的编译（更少的依赖）
+- 适合开发期间的快速性能检查
 
-**When to choose Criterion:**
-- Statistical regression detection across runs
-- HTML reports with charts
-- Established ecosystem, more CI integrations
+**何时选择 Criterion：**
+- 跨运行的统计回归检测
+- 带图表的 HTML 报告
+- 成熟的生态系统，更多的 CI 集成
 
-### Profiling with `perf` and Flamegraphs
+### 使用 `perf` 和火焰图分析性能
 
-Benchmarks tell you *how fast* — profiling tells you *where the time goes*.
+基准测试告诉你*有多快* —— 性能分析告诉你*时间花在哪里*。
 
 ```bash
-# Step 1: Build with debug info (release speed, debug symbols)
+# 步骤 1：构建带调试信息（发布速度，调试符号）
 cargo build --release
-# Ensure debug info is available:
+# 确保调试信息可用：
 # [profile.release]
-# debug = true          # Add this temporarily for profiling
+# debug = true          # 临时添加用于性能分析
 
-# Step 2: Record with perf
+# 步骤 2：使用 perf 记录
 perf record --call-graph=dwarf ./target/release/diag_tool --run-diagnostics
 
-# Step 3: Generate a flamegraph
-# Install: cargo install flamegraph
-# Install: cargo install addr2line --features=bin (optional, speedup cargo-flamegraph)
+# 步骤 3：生成火焰图
+# 安装：cargo install flamegraph
+# 安装：cargo install addr2line --features=bin（可选，加速 cargo-flamegraph）
 cargo flamegraph --root -- --run-diagnostics
-# Opens an interactive SVG flamegraph
+# 打开交互式 SVG 火焰图
 
-# Alternative: use perf + inferno
+# 替代方案：使用 perf + inferno
 perf script | inferno-collapse-perf | inferno-flamegraph > flamegraph.svg
 ```
 
-**Reading a flamegraph:**
-- **Width** = time spent in that function (wider = slower)
-- **Height** = call stack depth (taller ≠ slower, just deeper)
-- **Bottom** = entry point, **Top** = leaf functions doing actual work
-- Look for wide plateaus at the top — those are your hot spots
+**阅读火焰图：**
+- **宽度** = 函数中花费的时间（越宽 = 越慢）
+- **高度** = 调用栈深度（越高 ≠ 越慢，只是更深）
+- **底部** = 入口点，**顶部** = 执行实际工作的叶函数
+- 在顶部寻找宽平台 —— 那些是你的热点
 
-**Profile-guided optimization (PGO):**
+**性能分析引导优化（PGO）：**
 
 ```bash
-# Step 1: Build with instrumentation
+# 步骤 1：构建带插装
 RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
 
-# Step 2: Run representative workloads
-./target/release/diag_tool --run-full   # generates profiling data
+# 步骤 2：运行代表性工作负载
+./target/release/diag_tool --run-full   # 生成性能分析数据
 
-# Step 3: Merge profiling data
-# Use the llvm-profdata that matches rustc's LLVM version:
+# 步骤 3：合并性能分析数据
+# 使用与 rustc 的 LLVM 版本匹配的 llvm-profdata：
 # $(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata
-# Or if llvm-tools is installed: rustup component add llvm-tools
+# 或如果已安装 llvm-tools：rustup component add llvm-tools
 llvm-profdata merge -o /tmp/pgo-data/merged.profdata /tmp/pgo-data/
 
-# Step 4: Rebuild with profiling feedback
+# 步骤 4：使用性能分析反馈重新构建
 RUSTFLAGS="-Cprofile-use=/tmp/pgo-data/merged.profdata" cargo build --release
-# Typical improvement: 5-20% for compute-bound code (parsing, crypto, codegen).
-# I/O-bound or syscall-heavy code (like a large project) will see much less benefit
-# because the CPU is mostly waiting, not executing hot loops.
+# 典型改进：对于计算密集型代码（解析、加密、代码生成）为 5-20%。
+# I/O 绑定或 syscall 密集型代码（如大型项目）收益会少得多，
+# 因为 CPU 大部分时间在等待，而非执行热循环。
 ```
 
-> **Tip**: Before spending time on PGO, ensure your [release profile](ch07-release-profiles-and-binary-size.md)
-> already has LTO enabled — it typically delivers a bigger win for less effort.
+> **提示**：在花费时间在 PGO 之前，确保你的 [发布配置文件](ch07-release-profiles-and-binary-size.md) 已经启用 LTO —— 它通常为更少的努力带来更大的收益。
 
-### `hyperfine` — Quick End-to-End Timing
+### `hyperfine` —— 快速端到端计时
 
-[`hyperfine`](https://github.com/sharkdp/hyperfine) benchmarks entire commands,
-not individual functions. It's perfect for measuring overall binary performance:
+[`hyperfine`](https://github.com/sharkdp/hyperfine) 基准测试整个命令，而非单个函数。它非常适合测量整体二进制性能：
 
 ```bash
-# Install
+# 安装
 cargo install hyperfine
-# Or: sudo apt install hyperfine  (Ubuntu 23.04+)
+# 或：sudo apt install hyperfine  （Ubuntu 23.04+）
 
-# Basic benchmark
+# 基础基准测试
 hyperfine './target/release/diag_tool --run-diagnostics'
 
-# Compare two implementations
+# 比较两种实现
 hyperfine './target/release/diag_tool_v1 --run-diagnostics' \
           './target/release/diag_tool_v2 --run-diagnostics'
 
-# Warm-up runs + minimum iterations
+# 预热运行 + 最小迭代次数
 hyperfine --warmup 3 --min-runs 10 './target/release/diag_tool --run-all'
 
-# Export results as JSON for CI comparison
+# 导出结果为 JSON 用于 CI 比较
 hyperfine --export-json bench.json './target/release/diag_tool --run-all'
 ```
 
-**When to use `hyperfine` vs Criterion:**
-- `hyperfine`: whole-binary timing, comparing before/after a refactor, I/O-bound workloads
-- Criterion: micro-benchmarks of individual functions, statistical regression detection
+**何时使用 `hyperfine` vs Criterion：**
+- `hyperfine`：整个二进制计时，比较重构前后、I/O 绑定工作负载
+- Criterion：单个函数的微基准测试、统计回归检测
 
-### Continuous Benchmarking in CI
+### CI 中的持续基准测试
 
-Detect performance regressions before they ship:
+在性能回归发布前检测到它们：
 
 ```yaml
 # .github/workflows/bench.yml
-name: Benchmarks
+name: 基准测试
 
 on:
   pull_request:
@@ -353,46 +337,44 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Run benchmarks
-        # Requires criterion = { features = ["cargo_bench_support"] } for --output-format
+      - name: 运行基准测试
+        # 需要 criterion = { features = ["cargo_bench_support"] } 用于 --output-format
         run: cargo bench -- --output-format bencher | tee bench_output.txt
 
-      - name: Store benchmark result
+      - name: 存储基准测试结果
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: 'cargo'
           output-file-path: bench_output.txt
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '120%'    # Alert if 20% slower
+          alert-threshold: '120%'    # 如果慢 20% 则告警
           comment-on-alert: true
-          fail-on-alert: true        # Block PR if regression detected
+          fail-on-alert: true        # 检测到回归则阻止 PR
 ```
 
-**Key CI considerations:**
-- Use **dedicated benchmark runners** (not shared CI) for consistent results
-- Pin the runner to a specific machine type if using cloud CI
-- Store historical data to detect gradual regressions
-- Set thresholds based on your workload's tolerance (5% for hot paths, 20% for cold)
+**关键 CI 考虑**：
+- 使用**专用的基准测试运行器**（而非共享 CI）以获得一致的结果
+- 如果使用云 CI，将运行器固定到特定机器类型
+- 存储历史数据以检测渐进式回归
+- 根据工作负载的容忍度设置阈值（热路径为 5%，冷路径为 20%）
 
-### Application: Parsing Performance
+### 应用：解析性能
 
-The project has several performance-sensitive parsing paths that
-would benefit from benchmarks:
+项目有几个性能敏感的解析路径，将从基准测试中受益：
 
-| Parsing Hot Spot | Crate | Why It Matters |
+| 解析热点 | Crate | 为什么重要 |
 |------------------|-------|----------------|
-| accelerator-query CSV/XML output | `device_diag` | Called per-GPU, up to 8× per run |
-| Sensor event parsing | `event_log` | Thousands of records on busy servers |
-| PCIe topology JSON | `topology_lib` | Complex nested structures, golden-file validated |
-| Report JSON serialization | `diag_framework` | Final report output, size-sensitive |
-| Config JSON loading | `config_loader` | Startup latency |
+| accelerator-query CSV/XML 输出 | `device_diag` | 每次调用 per-GPU，每次运行最多 8× |
+| 传感器事件解析 | `event_log` | 在繁忙服务器上有数千条记录 |
+| PCIe 拓扑 JSON | `topology_lib` | 复杂嵌套结构，黄金文件验证 |
+| 报告 JSON 序列化 | `diag_framework` | 最终报告输出，大小敏感 |
+| 配置 JSON 加载 | `config_loader` | 启动延迟 |
 
-**Recommended first benchmark** — the topology parser, which already has golden-file
-test data:
+**推荐的第一个基准测试** —— 拓扑解析器，它已经有黄金文件测试数据：
 
 ```rust
-// topology_lib/benches/parse_bench.rs (proposed)
+// topology_lib/benches/parse_bench.rs（建议）
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::fs;
 
@@ -419,34 +401,32 @@ criterion_group!(benches, bench_topology_parse);
 criterion_main!(benches);
 ```
 
-### Try It Yourself
+### 亲自尝试
 
-1. **Write a Criterion benchmark**: Pick any parsing function in your codebase.
-   Create a `benches/` directory, set up a Criterion benchmark that measures
-   throughput in bytes/second. Run `cargo bench` and examine the HTML report.
+1. **编写 Criterion 基准测试**：选择代码库中的任何解析函数。
+   创建 `benches/` 目录，设置 Criterion 基准测试以字节/秒测量吞吐量。
+   运行 `cargo bench` 并检查 HTML 报告。
 
-2. **Generate a flamegraph**: Build your project with `debug = true` in
-   `[profile.release]`, then run `cargo flamegraph -- <your-args>`. Identify
-   the three widest stacks at the top of the flamegraph — those are your hot spots.
+2. **生成火焰图**：使用 `[profile.release]` 中的 `debug = true` 构建项目，
+   然后运行 `cargo flamegraph -- <your-args>`。识别火焰图顶部的三个最宽栈 —— 那些是你的热点。
 
-3. **Compare with `hyperfine`**: Install `hyperfine` and benchmark the overall
-   execution time of your binary with different flags. Compare it to the
-   per-function times from Criterion. Where does the time go that Criterion
-   doesn't see? (Answer: I/O, syscalls, process startup.)
+3. **使用 `hyperfine` 比较**：安装 `hyperfine` 并用不同标志基准测试
+   二进制的整体执行时间。将其与 Criterion 的每函数时间进行比较。
+   Criterion 看不到的时间花在哪里？（答案：I/O、系统调用、进程启动。）
 
-### Benchmark Tool Selection
+### 基准测试工具选择
 
 ```mermaid
 flowchart TD
-    START["Want to measure performance?"] --> WHAT{"What level?"}
+    START["想测量性能？"] --> WHAT{"什么级别？"}
 
-    WHAT -->|"Single function"| CRITERION["Criterion.rs\nStatistical, regression detection"]
-    WHAT -->|"Quick function check"| DIVAN["Divan\nLighter, attribute macros"]
-    WHAT -->|"Whole binary"| HYPERFINE["hyperfine\nEnd-to-end, wall-clock"]
-    WHAT -->|"Find hot spots"| PERF["perf + flamegraph\nCPU sampling profiler"]
+    WHAT -->|"单个函数"| CRITERION["Criterion.rs\n统计，回归检测"]
+    WHAT -->|"快速函数检查"| DIVAN["Divan\n更轻量，属性宏"]
+    WHAT -->|"整个二进制"| HYPERFINE["hyperfine\n端到端，挂钟时间"]
+    WHAT -->|"发现热点"| PERF["perf + 火焰图\nCPU 采样分析器"]
 
-    CRITERION --> CI_BENCH["Continuous benchmarking\nin GitHub Actions"]
-    PERF --> OPTIMIZE["Profile-Guided\nOptimization (PGO)"]
+    CRITERION --> CI_BENCH["GitHub Actions 中的持续基准测试"]
+    PERF --> OPTIMIZE["性能分析引导优化 (PGO)"]
 
     style CRITERION fill:#91e5a3,color:#000
     style DIVAN fill:#91e5a3,color:#000
@@ -456,14 +436,14 @@ flowchart TD
     style OPTIMIZE fill:#ffd43b,color:#000
 ```
 
-### 🏋️ Exercises
+### 🏋️ 练习
 
-#### 🟢 Exercise 1: First Criterion Benchmark
+#### 🟢 练习 1：第一个 Criterion 基准测试
 
-Create a crate with a function that sorts a `Vec<u64>` of 10,000 random elements. Write a Criterion benchmark for it, then switch to `.sort_unstable()` and observe the performance difference in the HTML report.
+创建一个带函数的 crate，该函数对 10,000 个随机元素的 `Vec<u64>` 进行排序。为它编写 Criterion 基准测试，然后切换到 `.sort_unstable()` 并在 HTML 报告中观察性能差异。
 
 <details>
-<summary>Solution</summary>
+<summary>答案</summary>
 
 ```toml
 # Cargo.toml
@@ -518,33 +498,33 @@ open target/criterion/sort-10k/report/index.html
 ```
 </details>
 
-#### 🟡 Exercise 2: Flamegraph Hot Spot
+#### 🟡 练习 2：火焰图热点
 
-Build a project with `debug = true` in `[profile.release]`, then generate a flamegraph. Identify the top 3 widest stacks.
+使用 `[profile.release]` 中的 `debug = true` 构建项目，然后生成火焰图。识别前 3 个最宽的栈。
 
 <details>
-<summary>Solution</summary>
+<summary>答案</summary>
 
 ```toml
 # Cargo.toml
 [profile.release]
-debug = true  # Keep symbols for flamegraph
+debug = true  # 为 flamegraph 保留符号
 ```
 
 ```bash
 cargo install flamegraph
 cargo flamegraph --release -- <your-args>
-# Opens flamegraph.svg in browser
-# The widest stacks at the top are your hot spots
+# 在浏览器中打开 flamegraph.svg
+# 顶部最宽的栈是你的热点
 ```
 </details>
 
-### Key Takeaways
+### 关键要点
 
-- Never benchmark with `Instant::now()` — use Criterion.rs for statistical rigor and regression detection
-- `black_box()` prevents the compiler from optimizing away your benchmark target
-- `hyperfine` measures wall-clock time for the whole binary; Criterion measures individual functions — use both
-- Flamegraphs show *where* time is spent; benchmarks show *how much* time is spent
-- Continuous benchmarking in CI catches performance regressions before they ship
+- 永远不要使用 `Instant::now()` 进行基准测试 —— 使用 Criterion.rs 获得统计严谨性和回归检测
+- `black_box()` 防止编译器优化掉你的基准测试目标
+- `hyperfine` 测量整个二进制的挂钟时间；Criterion 测量单个函数 —— 两者都用
+- 火焰图显示时间花*在哪里*；基准测试显示花了*多少*时间
+- CI 中的持续基准测试在性能回归发布前捕获它们
 
 ---

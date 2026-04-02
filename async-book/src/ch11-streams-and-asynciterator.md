@@ -1,23 +1,23 @@
 # 11. Streams and AsyncIterator 🟡
 
-> **What you'll learn:**
-> - The `Stream` trait: async iteration over multiple values
-> - Creating streams: `stream::iter`, `async_stream`, `unfold`
-> - Stream combinators: `map`, `filter`, `buffer_unordered`, `fold`
-> - Async I/O traits: `AsyncRead`, `AsyncWrite`, `AsyncBufRead`
+> **你将学到什么：**
+> - `Stream` trait：异步迭代多个值
+> - 创建 streams：`stream::iter`、`async_stream`、`unfold`
+> - Stream 组合子：`map`、`filter`、`buffer_unordered`、`fold`
+> - Async I/O traits：`AsyncRead`、`AsyncWrite`、`AsyncBufRead`
 
-## Stream Trait Overview
+## Stream Trait 概述
 
-A `Stream` is to `Iterator` what `Future` is to a single value — it yields multiple values asynchronously:
+`Stream` 对于 `Iterator` 就像 `Future` 对于单个值 —— 它异步地产出多个值：
 
 ```rust
-// std::iter::Iterator (synchronous, multiple values)
+// std::iter::Iterator（同步，多个值）
 trait Iterator {
     type Item;
     fn next(&mut self) -> Option<Self::Item>;
 }
 
-// futures::Stream (async, multiple values)
+// futures::Stream（异步，多个值）
 trait Stream {
     type Item;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>>;
@@ -47,17 +47,17 @@ graph LR
     style STREAM fill:#c8e6c9,color:#000
 ```
 
-### Creating Streams
+### 创建 Streams
 
 ```rust
 use futures::stream::{self, StreamExt};
 use tokio::time::{interval, Duration};
 use tokio_stream::wrappers::IntervalStream;
 
-// 1. From an iterator
+// 1. 从 iterator
 let s = stream::iter(vec![1, 2, 3]);
 
-// 2. From an async generator (using async_stream crate)
+// 2. 从异步生成器（使用 async_stream crate）
 // Cargo.toml: async-stream = "0.3"
 use async_stream::stream;
 
@@ -70,25 +70,25 @@ fn countdown(from: u32) -> impl futures::Stream<Item = u32> {
     }
 }
 
-// 3. From a tokio interval
+// 3. 从 tokio interval
 let tick_stream = IntervalStream::new(interval(Duration::from_secs(1)));
 
-// 4. From a channel receiver (tokio_stream::wrappers)
+// 4. 从 channel 接收器（tokio_stream::wrappers）
 let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 let rx_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
 
-// 5. From unfold (generate from async state)
+// 5. 从 unfold（从异步状态生成）
 let s = stream::unfold(0u32, |state| async move {
     if state >= 5 {
-        None // Stream ends
+        None // Stream 结束
     } else {
         let next = state + 1;
-        Some((state, next)) // yield `state`, new state is `next`
+        Some((state, next)) // 产出 `state`，新状态是 `next`
     }
 });
 ```
 
-### Consuming Streams
+### 消费 Streams
 
 ```rust
 use futures::stream::{self, StreamExt};
@@ -96,7 +96,7 @@ use futures::stream::{self, StreamExt};
 async fn stream_examples() {
     let s = stream::iter(vec![1, 2, 3, 4, 5]);
 
-    // for_each — process each item
+    // for_each —— 处理每个元素
     s.for_each(|x| async move {
         println!("{x}");
     }).await;
@@ -113,18 +113,18 @@ async fn stream_examples() {
         .collect()
         .await;
 
-    // buffer_unordered — process N items concurrently
+    // buffer_unordered —— 并发处理 N 个元素
     let results: Vec<_> = stream::iter(vec!["url1", "url2", "url3"])
         .map(|url| async move {
-            // Simulate HTTP fetch
+            // 模拟 HTTP 获取
             tokio::time::sleep(Duration::from_millis(100)).await;
             format!("response from {url}")
         })
-        .buffer_unordered(10) // Up to 10 concurrent fetches
+        .buffer_unordered(10) // 最多 10 个并发获取
         .collect()
         .await;
 
-    // take, skip, zip, chain — just like Iterator
+    // take、skip、zip、chain —— 就像 Iterator
     let first_three: Vec<i32> = stream::iter(1..=100)
         .take(3)
         .collect()
@@ -132,21 +132,21 @@ async fn stream_examples() {
 }
 ```
 
-### Comparison with C# IAsyncEnumerable
+### 与 C# IAsyncEnumerable 的比较
 
-| Feature | Rust `Stream` | C# `IAsyncEnumerable<T>` |
-|---------|--------------|--------------------------|
-| **Syntax** | `stream! { yield x; }` | `await foreach` / `yield return` |
-| **Cancellation** | Drop the stream | `CancellationToken` |
-| **Backpressure** | Consumer controls poll rate | Consumer controls `MoveNextAsync` |
-| **Built-in** | No (needs `futures` crate) | Yes (since C# 8.0) |
-| **Combinators** | `.map()`, `.filter()`, `.buffer_unordered()` | LINQ + `System.Linq.Async` |
-| **Error handling** | `Stream<Item = Result<T, E>>` | Throw in async iterator |
+| 特性 | Rust `Stream` | C# `IAsyncEnumerable<T>` |
+|------|--------------|--------------------------|
+| **语法** | `stream! { yield x; }` | `await foreach` / `yield return` |
+| **取消** | Drop the stream | `CancellationToken` |
+| **背压** | 消费者控制轮询速率 | 消费者控制 `MoveNextAsync` |
+| **内置** | 否（需要 `futures` crate） | 是（自 C# 8.0） |
+| **组合子** | `.map()`、`.filter()`、`.buffer_unordered()` | LINQ + `System.Linq.Async` |
+| **错误处理** | `Stream<Item = Result<T, E>>` | 在异步 iterator 中抛出 |
 
 ```rust
-// Rust: Stream of database rows
-// NOTE: try_stream! (not stream!) is required when using ? inside the body.
-// stream! doesn't propagate errors — try_stream! yields Err(e) and ends.
+// Rust：数据库行的 Stream
+// 注意：当在 body 中使用 ? 时，需要 try_stream!（不是 stream!）。
+// stream! 不传播错误 —— try_stream! 产出 Err(e) 并结束。
 fn get_users(db: &Database) -> impl Stream<Item = Result<User, DbError>> + '_ {
     try_stream! {
         let mut cursor = db.query("SELECT * FROM users").await?;
@@ -156,7 +156,7 @@ fn get_users(db: &Database) -> impl Stream<Item = Result<User, DbError>> + '_ {
     }
 }
 
-// Consume:
+// 消费：
 let mut users = pin!(get_users(&db));
 while let Some(result) = users.next().await {
     match result {
@@ -167,7 +167,7 @@ while let Some(result) = users.next().await {
 ```
 
 ```csharp
-// C# equivalent:
+// C# 等价物：
 async IAsyncEnumerable<User> GetUsers() {
     await using var reader = await db.QueryAsync("SELECT * FROM users");
     while (await reader.ReadAsync()) {
@@ -175,21 +175,21 @@ async IAsyncEnumerable<User> GetUsers() {
     }
 }
 
-// Consume:
+// 消费：
 await foreach (var user in GetUsers()) {
     Console.WriteLine(user.Name);
 }
 ```
 
 <details>
-<summary><strong>🏋️ Exercise: Build an Async Stats Aggregator</strong> (click to expand)</summary>
+<summary><strong>🏋️ 练习：构建一个异步统计聚合器</strong>（点击展开）</summary>
 
-**Challenge**: Given a stream of sensor readings `Stream<Item = f64>`, write an async function that consumes the stream and returns `(count, min, max, average)`. Use `StreamExt` combinators — don't just collect into a Vec.
+**挑战**：给定一个传感器读数流 `Stream<Item = f64>`，编写一个异步函数消费该流并返回 `(count, min, max, average)`。使用 `StreamExt` 组合子 —— 不要只收集到 Vec 中。
 
-*Hint*: Use `.fold()` to accumulate state across the stream.
+*提示*：使用 `.fold()` 在流中累积状态。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 答案</summary>
 
 ```rust
 use futures::stream::{self, StreamExt};
@@ -235,28 +235,28 @@ async fn test_stats() {
 }
 ```
 
-**Key takeaway**: Stream combinators like `.fold()` process items one-at-a-time without collecting into memory — essential for processing large or unbounded data streams.
+**关键要点**：像 `.fold()` 这样的 stream 组合子一次处理一个元素，而不收集到内存中 —— 对于处理大型或无界数据流至关重要。
 
 </details>
 </details>
 
-### Async I/O Traits: AsyncRead, AsyncWrite, AsyncBufRead
+### Async I/O Traits：AsyncRead、AsyncWrite、AsyncBufRead
 
-Just as `std::io::Read`/`Write` are the foundation of synchronous I/O, their async counterparts are the foundation of async I/O. These traits are provided by `tokio::io` (or `futures::io` for runtime-agnostic code):
+就像 `std::io::Read`/`Write` 是同步 I/O 的基础一样，它们的异步版本是异步 I/O 的基础。这些 traits 由 `tokio::io`（或 `futures::io` 用于运行时无关代码）提供：
 
 ```rust
-// tokio::io — the async versions of std::io traits
+// tokio::io —— std::io traits 的异步版本
 
-/// Read bytes from a source asynchronously
+/// 异步地从源读取字节
 pub trait AsyncRead {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,  // Tokio's safe wrapper around uninitialized memory
+        buf: &mut ReadBuf<'_>,  // Tokio 的安全包装器，用于未初始化内存
     ) -> Poll<io::Result<()>>;
 }
 
-/// Write bytes to a sink asynchronously
+/// 异步地写字节到 sink
 pub trait AsyncWrite {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -268,14 +268,14 @@ pub trait AsyncWrite {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>>;
 }
 
-/// Buffered reading with line support
+/// 带有行支持的缓冲读取
 pub trait AsyncBufRead: AsyncRead {
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>>;
     fn consume(self: Pin<&mut Self>, amt: usize);
 }
 ```
 
-**In practice**, you rarely call these `poll_*` methods directly. Instead, use the extension traits `AsyncReadExt` and `AsyncWriteExt` which provide `.await`-friendly helper methods:
+**在实践中**，你很少直接调用这些 `poll_*` 方法。相反，使用扩展 traits `AsyncReadExt` 和 `AsyncWriteExt`，它们提供 `.await` 友好的辅助方法：
 
 ```rust
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncBufReadExt};
@@ -285,7 +285,7 @@ use tokio::io::BufReader;
 async fn io_examples() -> tokio::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:8080").await?;
 
-    // AsyncWriteExt: write_all, write_u32, write_buf, etc.
+    // AsyncWriteExt: write_all, write_u32, write_buf 等
     stream.write_all(b"GET / HTTP/1.0\r\n\r\n").await?;
 
     // AsyncReadExt: read, read_exact, read_to_end, read_to_string
@@ -304,26 +304,26 @@ async fn io_examples() -> tokio::io::Result<()> {
 }
 ```
 
-**Implementing custom async I/O** — wrap a protocol over raw TCP:
+**实现自定义异步 I/O** —— 在原始 TCP 上包装协议：
 
 ```rust
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// A length-prefixed protocol: [u32 length][payload bytes]
+/// 长度前缀协议：[u32 length][payload bytes]
 struct FramedStream<T> {
     inner: T,
 }
 
 impl<T: AsyncRead + AsyncReadExt + Unpin> FramedStream<T> {
-    /// Read one complete frame
+    /// 读取一个完整的帧
     async fn read_frame(&mut self) -> tokio::io::Result<Vec<u8>>
     {
-        // Read the 4-byte length prefix
+        // 读取 4 字节长度前缀
         let len = self.inner.read_u32().await? as usize;
 
-        // Read exactly that many bytes
+        // 精确读取那么多字节
         let mut payload = vec![0u8; len];
         self.inner.read_exact(&mut payload).await?;
         Ok(payload)
@@ -331,7 +331,7 @@ impl<T: AsyncRead + AsyncReadExt + Unpin> FramedStream<T> {
 }
 
 impl<T: AsyncWrite + AsyncWriteExt + Unpin> FramedStream<T> {
-    /// Write one complete frame
+    /// 写入一个完整的帧
     async fn write_frame(&mut self, data: &[u8]) -> tokio::io::Result<()>
     {
         self.inner.write_u32(data.len() as u32).await?;
@@ -342,26 +342,26 @@ impl<T: AsyncWrite + AsyncWriteExt + Unpin> FramedStream<T> {
 }
 ```
 
-| Sync Trait | Async Trait (tokio) | Async Trait (futures) | Extension Trait |
-|-----------|--------------------|-----------------------|----------------|
+| 同步 Trait | 异步 Trait (tokio) | 异步 Trait (futures) | 扩展 Trait |
+|-----------|--------------------|-----------------------|------------|
 | `std::io::Read` | `tokio::io::AsyncRead` | `futures::io::AsyncRead` | `AsyncReadExt` |
 | `std::io::Write` | `tokio::io::AsyncWrite` | `futures::io::AsyncWrite` | `AsyncWriteExt` |
 | `std::io::BufRead` | `tokio::io::AsyncBufRead` | `futures::io::AsyncBufRead` | `AsyncBufReadExt` |
 | `std::io::Seek` | `tokio::io::AsyncSeek` | `futures::io::AsyncSeek` | `AsyncSeekExt` |
 
-> **tokio vs futures I/O traits**: They're similar but not identical — tokio's `AsyncRead` uses `ReadBuf` (handles uninitialized memory safely), while `futures::AsyncRead` uses `&mut [u8]`. Use `tokio_util::compat` to convert between them.
+> **tokio vs futures I/O traits**：它们相似但不完全相同 —— tokio 的 `AsyncRead` 使用 `ReadBuf`（安全处理未初始化内存），而 `futures::AsyncRead` 使用 `&mut [u8]`。使用 `tokio_util::compat` 在两者之间转换。
 
-> **Copy utilities**: `tokio::io::copy(&mut reader, &mut writer)` is the async equivalent of `std::io::copy` — useful for proxy servers or file transfers. `tokio::io::copy_bidirectional` copies both directions concurrently.
-
-<details>
-<summary><strong>🏋️ Exercise: Build an Async Line Counter</strong> (click to expand)</summary>
-
-**Challenge**: Write an async function that takes any `AsyncBufRead` source and returns the number of non-empty lines. It should work with files, TCP streams, or any buffered reader.
-
-*Hint*: Use `AsyncBufReadExt::lines()` and count lines where `!line.is_empty()`.
+> **复制工具**：`tokio::io::copy(&mut reader, &mut writer)` 是 `std::io::copy` 的异步等价物 —— 用于代理服务器或文件传输。`tokio::io::copy_bidirectional` 并发地双向复制。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary><strong>🏋️ 练习：构建一个异步行计数器</strong>（点击展开）</summary>
+
+**挑战**：编写一个异步函数，接受任何 `AsyncBufRead` 源并返回非空行数。它应该适用于文件、TCP 流或任何缓冲读取器。
+
+*提示*：使用 `AsyncBufReadExt::lines()` 并计数 `!line.is_empty()` 的行。
+
+<details>
+<summary>🔑 答案</summary>
 
 ```rust
 use tokio::io::AsyncBufReadExt;
@@ -379,7 +379,7 @@ async fn count_non_empty_lines<R: tokio::io::AsyncBufRead + Unpin>(
     Ok(count)
 }
 
-// Works with any AsyncBufRead:
+// 适用于任何 AsyncBufRead：
 // let file = tokio::io::BufReader::new(tokio::fs::File::open("data.txt").await?);
 // let count = count_non_empty_lines(file).await?;
 //
@@ -387,19 +387,17 @@ async fn count_non_empty_lines<R: tokio::io::AsyncBufRead + Unpin>(
 // let count = count_non_empty_lines(tcp).await?;
 ```
 
-**Key takeaway**: By programming against `AsyncBufRead` instead of a concrete type, your I/O code is reusable across files, sockets, pipes, and even in-memory buffers (`tokio::io::BufReader::new(std::io::Cursor::new(data))`).
+**关键要点**：通过对 `AsyncBufRead` 而不是具体类型编程，你的 I/O 代码可以在文件、socket、管道甚至内存缓冲区（`tokio::io::BufReader::new(std::io::Cursor::new(data))`）之间重用。
 
 </details>
 </details>
 
-> **Key Takeaways — Streams and AsyncIterator**
-> - `Stream` is the async equivalent of `Iterator` — yields `Poll::Ready(Some(item))` or `Poll::Ready(None)`
-> - `.buffer_unordered(N)` processes N stream items concurrently — the key concurrency tool for streams
-> - `async_stream::stream!` is the easiest way to create custom streams (uses `yield`)
-> - `AsyncRead`/`AsyncBufRead` enable generic, reusable I/O code across files, sockets, and pipes
+> **关键要点 —— Streams and AsyncIterator**
+> - `Stream` 是 `Iterator` 的异步等价物 —— 产出 `Poll::Ready(Some(item))` 或 `Poll::Ready(None)`
+> - `.buffer_unordered(N)` 并发处理 N 个流元素 —— 流的并发关键工具
+> - `async_stream::stream!` 是创建自定义流的最简单方法（使用 `yield`）
+> - `AsyncRead`/`AsyncBufRead` 支持在文件、socket 和管道上通用、可重用的 I/O 代码
 
-> **See also:** [Ch 9 — When Tokio Isn't the Right Fit](ch09-when-tokio-isnt-the-right-fit.md) for `FuturesUnordered` (related pattern), [Ch 13 — Production Patterns](ch13-production-patterns.md) for backpressure with bounded channels
+> **另见：**[第 9 章 — When Tokio Isn't the Right Fit](ch09-when-tokio-isnt-the-right-fit.md) 了解 `FuturesUnordered`（相关模式），[第 13 章 — Production Patterns](ch13-production-patterns.md) 了解有界 channel 的背压
 
 ***
-
-

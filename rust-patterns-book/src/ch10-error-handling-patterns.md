@@ -1,18 +1,18 @@
-# 10. Error Handling Patterns 🟢
+# 10. 错误处理模式 🟢
 
-> **What you'll learn:**
-> - When to use `thiserror` (libraries) vs `anyhow` (applications)
-> - Error conversion chains with `#[from]` and `.context()` wrappers
-> - How the `?` operator desugars and works in `main()`
-> - When to panic vs return errors, and `catch_unwind` for FFI boundaries
+> **你将学到什么：**
+> - 何时使用 `thiserror`（库）vs `anyhow`（应用程序）
+> - 带 `#[from]` 和 `.context()` 包装器的错误转换链
+> - `?` 运算符如何展开以及在 `main()` 中如何工作
+> - 何时 panic vs 返回错误，以及 `catch_unwind` 用于 FFI 边界
 
-## thiserror vs anyhow — Library vs Application
+## thiserror vs anyhow —— 库 vs 应用程序
 
-Rust error handling centers on the `Result<T, E>` type. Two crates dominate:
+Rust 错误处理以 `Result<T, E>` 类型为中心。两个 crate 占主导地位：
 
 ```rust,ignore
-// --- thiserror: For LIBRARIES ---
-// Generates Display, Error, and From impls via derive macros
+// --- thiserror：用于库 ---
+// 通过 derive 宏生成 Display、Error 和 From impl
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,12 +29,12 @@ pub enum DatabaseError {
     #[error("record not found: table={table} id={id}")]
     NotFound { table: String, id: u64 },
 
-    #[error(transparent)] // Delegate Display to the inner error
-    Io(#[from] std::io::Error), // Auto-generates From<io::Error>
+    #[error(transparent)] // 将 Display 委托给内部错误
+    Io(#[from] std::io::Error), // 自动生成 From<io::Error>
 }
 
-// --- anyhow: For APPLICATIONS ---
-// Dynamic error type — great for top-level code where you just want errors to propagate
+// --- anyhow：用于应用程序 ---
+// 动态错误类型 —— 适合顶层代码，你只想让错误传播
 use anyhow::{Context, Result, bail, ensure};
 
 fn read_config(path: &str) -> Result<Config> {
@@ -53,23 +53,23 @@ fn main() -> Result<()> {
     let config = read_config("server.toml")?;
 
     if config.name.is_empty() {
-        bail!("server name cannot be empty"); // Return Err immediately
+        bail!("server name cannot be empty"); // 立即返回 Err
     }
 
     Ok(())
 }
 ```
 
-**When to use which**:
+**何时使用哪个**：
 
 | | `thiserror` | `anyhow` |
 |---|---|---|
-| **Use in** | Libraries, shared crates | Applications, binaries |
-| **Error types** | Concrete enums — callers can match | `anyhow::Error` — opaque |
-| **Effort** | Define your error enum | Just use `Result<T>` |
-| **Downcasting** | Not needed — pattern match | `error.downcast_ref::<MyError>()` |
+| **使用在** | 库、共享 crate | 应用程序、二进制文件 |
+| **错误类型** | 具体枚举 —— 调用者可以匹配 | `anyhow::Error` —— 不透明 |
+| **工作量** | 定义你的错误枚举 | 只用 `Result<T>` |
+| **向下转换** | 不需要 —— 模式匹配 | `error.downcast_ref::<MyError>()` |
 
-### Error Conversion Chains (#[from])
+### 错误转换链（`#[from]`）
 
 ```rust,ignore
 use thiserror::Error;
@@ -86,7 +86,7 @@ enum AppError {
     Http(#[from] reqwest::Error),
 }
 
-// Now ? automatically converts:
+// 现在 ? 自动转换：
 fn fetch_and_parse(url: &str) -> Result<Config, AppError> {
     let body = reqwest::blocking::get(url)?.text()?;  // reqwest::Error → AppError::Http
     let config: Config = serde_json::from_str(&body)?; // serde_json::Error → AppError::Json
@@ -94,9 +94,9 @@ fn fetch_and_parse(url: &str) -> Result<Config, AppError> {
 }
 ```
 
-### Context and Error Wrapping
+### Context 和错误包装
 
-Add human-readable context to errors without losing the original:
+为错误添加人类可读的 context 而不丢失原始错误：
 
 ```rust,ignore
 use anyhow::{Context, Result};
@@ -114,7 +114,7 @@ fn process_file(path: &str) -> Result<Data> {
     Ok(data)
 }
 
-// Error output:
+// 错误输出：
 // Error: validation failed
 //
 // Caused by:
@@ -122,48 +122,48 @@ fn process_file(path: &str) -> Result<Data> {
 //    1: expected ',' at line 5 column 12
 ```
 
-### The ? Operator in Depth
+### 深入探讨 `?` 运算符
 
-`?` is syntactic sugar for a `match` + `From` conversion + early return:
+`?` 是 `match` + `From` 转换 + 提前返回的语法糖：
 
 ```rust
-// This:
+// 这样：
 let value = operation()?;
 
-// Desugars to:
+// 展开为：
 let value = match operation() {
     Ok(v) => v,
     Err(e) => return Err(From::from(e)),
     //                  ^^^^^^^^^^^^^^
-    //                  Automatic conversion via From trait
+    //                  通过 From trait 自动转换
 };
 ```
 
-**`?` also works with `Option`** (in functions returning `Option`):
+**`?` 也适用于 `Option`**（在返回 `Option` 的函数中）：
 
 ```rust
 fn find_user_email(users: &[User], name: &str) -> Option<String> {
-    let user = users.iter().find(|u| u.name == name)?; // Returns None if not found
-    let email = user.email.as_ref()?; // Returns None if email is None
+    let user = users.iter().find(|u| u.name == name)?; // 如果未找到返回 None
+    let email = user.email.as_ref()?; // 如果 email 是 None 返回 None
     Some(email.to_uppercase())
 }
 ```
 
-### Panics, catch_unwind, and When to Abort
+### Panics、catch_unwind 和何时中止
 
 ```rust
-// Panics: for BUGS, not expected errors
+// Panics：用于 BUGS，不是预期错误
 fn get_element(data: &[i32], index: usize) -> &i32 {
-    // If this panics, it's a programming error (bug).
-    // Don't "handle" it — fix the caller.
+    // 如果这个 panic，这是编程错误（bug）。
+    // 不要"处理"它 —— 修复调用者。
     &data[index]
 }
 
-// catch_unwind: for boundaries (FFI, thread pools)
+// catch_unwind：用于边界（FFI、线程池）
 use std::panic;
 
 let result = panic::catch_unwind(|| {
-    // Run potentially panicking code safely
+    // 安全地运行可能 panic 的代码
     risky_operation()
 });
 
@@ -172,23 +172,21 @@ match result {
     Err(_) => eprintln!("Operation panicked — continuing safely"),
 }
 
-// When to use which:
-// - Result<T, E> → expected failures (file not found, network timeout)
-// - panic!()     → programming bugs (index out of bounds, invariant violated)
-// - process::abort() → unrecoverable state (security violation, corrupt data)
+// 何时使用哪个：
+// - Result<T, E> → 预期失败（文件未找到、网络超时）
+// - panic!()     → 编程 bug（索引越界、不变量被违反）
+// - process::abort() → 不可恢复状态（安全违规、数据损坏）
 ```
 
-> **C++ comparison**: `Result<T, E>` replaces exceptions for expected errors.
-> `panic!()` is like `assert()` or `std::terminate()` — it's for bugs, not
-> control flow. Rust's `?` operator makes error propagation as ergonomic as
-> exceptions without the unpredictable control flow.
+> **C++ 比较**：`Result<T, E>` 替换异常用于预期错误。
+> `panic!()` 像 `assert()` 或 `std::terminate()` —— 它用于 bug，不是控制流。Rust 的 `?` 运算符让错误传播像异常一样符合人体工程学，而没有不可预测的控制流。
 
-> **Key Takeaways — Error Handling**
-> - Libraries: `thiserror` for structured error enums; applications: `anyhow` for ergonomic propagation
-> - `#[from]` auto-generates `From` impls; `.context()` adds human-readable wrappers
-> - `?` desugars to `From::from()` + early return; works in `main()` returning `Result`
+> **关键要点 —— 错误处理**
+> - 库：`thiserror` 用于结构化错误枚举；应用程序：`anyhow` 用于符合人体工程学的传播
+> - `#[from]` 自动生成 `From` impl；`.context()` 添加人类可读的包装器
+> - `?` 展开为 `From::from()` + 提前返回；在返回 `Result` 的 `main()` 中工作
 
-> **See also:** [Ch 14 — API Design](ch15-crate-architecture-and-api-design.md) for "parse, don't validate" patterns. [Ch 10 — Serialization](ch11-serialization-zero-copy-and-binary-data.md) for serde error handling.
+> **另见：**[第 15 章 —— API 设计](ch15-crate-architecture-and-api-design.md) 了解"parse, don't validate"模式。[第 11 章 —— 序列化](ch11-serialization-zero-copy-and-binary-data.md) 了解 serde 错误处理。
 
 ```mermaid
 flowchart LR
@@ -213,12 +211,12 @@ flowchart LR
 
 ---
 
-### Exercise: Error Hierarchy with thiserror ★★ (~30 min)
+### 练习：带 thiserror 的错误层次结构 ★★（约 30 分钟）
 
-Design an error type hierarchy for a file-processing application that can fail during I/O, parsing (JSON and CSV), and validation. Use `thiserror` and demonstrate `?` propagation.
+为一个文件处理应用程序设计错误类型层次结构，该应用程序可能在 I/O、解析（JSON 和 CSV）和验证期间失败。使用 `thiserror` 并演示 `?` 传播。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 答案</summary>
 
 ```rust,ignore
 use thiserror::Error;
@@ -239,7 +237,7 @@ pub enum AppError {
 }
 
 fn read_file(path: &str) -> Result<String, AppError> {
-    Ok(std::fs::read_to_string(path)?) // io::Error → AppError::Io via #[from]
+    Ok(std::fs::read_to_string(path)?) // io::Error → AppError::Io 通过 #[from]
 }
 
 fn parse_json(content: &str) -> Result<serde_json::Value, AppError> {
@@ -282,4 +280,3 @@ fn main() {
 </details>
 
 ***
-

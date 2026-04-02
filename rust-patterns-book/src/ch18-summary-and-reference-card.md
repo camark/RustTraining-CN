@@ -1,130 +1,130 @@
-## Quick Reference Card
+## 快速参考卡片
 
-### Pattern Decision Guide
+### 模式决策指南
 
 ```text
-Need type safety for primitives?
-└── Newtype pattern (Ch3)
+需要原始类型的类型安全？
+└── 新类型模式（第 3 章）
 
-Need compile-time state enforcement?
-└── Type-state pattern (Ch3)
+需要编译时状态强制？
+└── 类型状态模式（第 3 章）
 
-Need a "tag" with no runtime data?
-└── PhantomData (Ch4)
+需要无运行时数据的"标签"？
+└── PhantomData（第 4 章）
 
-Need to break Rc/Arc reference cycles?
-└── Weak<T> / sync::Weak<T> (Ch8)
+需要打破 Rc/Arc 引用循环？
+└── Weak<T> / sync::Weak<T>（第 8 章）
 
-Need to wait for a condition without busy-looping?
-└── Condvar + Mutex (Ch6)
+需要等待条件而不忙循环？
+└── Condvar + Mutex（第 6 章）
 
-Need to handle "one of N types"?
-├── Known closed set → Enum
-├── Open set, hot path → Generics
-├── Open set, cold path → dyn Trait
-└── Completely unknown types → Any + TypeId (Ch2)
+需要处理"N 个类型中的一个"？
+├── 已知封闭集合 → Enum
+├── 开放集合，热路径 → 泛型
+├── 开放集合，冷路径 → dyn Trait
+└── 完全未知的类型 → Any + TypeId（第 2 章）
 
-Need shared state across threads?
-├── Simple counter/flag → Atomics
-├── Short critical section → Mutex
-├── Read-heavy → RwLock
-├── Lazy one-time init → OnceLock / LazyLock (Ch6)
-└── Complex state → Actor + Channels
+需要跨线程共享状态？
+├── 简单计数器/标志 → Atomics
+├── 短临界区 → Mutex
+├── 读多写少 → RwLock
+├── 惰性一次性初始化 → OnceLock / LazyLock（第 6 章）
+└── 复杂状态 → Actor + Channels
 
-Need to parallelize computation?
-├── Collection processing → rayon::par_iter
-├── Background task → thread::spawn
-└── Borrow local data → thread::scope
+需要并行化计算？
+├── 集合处理 → rayon::par_iter
+├── 后台任务 → thread::spawn
+└── 借用局部数据 → thread::scope
 
-Need async I/O or concurrent networking?
-├── Basic → tokio + async/await (Ch15)
-└── Advanced (streams, middleware) → see Async Rust Training
+需要异步 I/O 或并发网络？
+├── 基础 → tokio + async/await（第 15 章）
+└── 高级（流、中间件）→ 参考 Async Rust Training
 
-Need error handling?
-├── Library → thiserror (#[derive(Error)])
-└── Application → anyhow (Result<T>)
+需要错误处理？
+├── 库 → thiserror（#[derive(Error)]）
+└── 应用 → anyhow（Result<T>）
 
-Need to prevent a value from being moved?
-└── Pin<T> (Ch8) — required for Futures, self-referential types
+需要防止值被移动？
+└── Pin<T>（第 8 章）—— Future 和自引用类型必需
 ```
 
-### Trait Bounds Cheat Sheet
+### Trait 边界速查表
 
-| Bound | Meaning |
+| 边界 | 含义 |
 |-------|---------|
-| `T: Clone` | Can be duplicated |
-| `T: Send` | Can be moved to another thread |
-| `T: Sync` | `&T` can be shared between threads |
-| `T: 'static` | Contains no non-static references |
-| `T: Sized` | Size known at compile time (default) |
-| `T: ?Sized` | Size may not be known (`[T]`, `dyn Trait`) |
-| `T: Unpin` | Safe to move after pinning |
-| `T: Default` | Has a default value |
-| `T: Into<U>` | Can be converted to `U` |
-| `T: AsRef<U>` | Can be borrowed as `&U` |
-| `T: Deref<Target = U>` | Auto-derefs to `&U` |
-| `F: Fn(A) -> B` | Callable, borrows state immutably |
-| `F: FnMut(A) -> B` | Callable, may mutate state |
-| `F: FnOnce(A) -> B` | Callable exactly once, may consume state |
+| `T: Clone` | 可以复制 |
+| `T: Send` | 可以移动到另一个线程 |
+| `T: Sync` | `&T` 可以在线程间共享 |
+| `T: 'static` | 不包含非 'static 引用 |
+| `T: Sized` | 大小在编译时已知（默认） |
+| `T: ?Sized` | 大小可能未知（`[T]`、`dyn Trait`） |
+| `T: Unpin` | pinning 后移动安全 |
+| `T: Default` | 有默认值 |
+| `T: Into<U>` | 可以转换为 `U` |
+| `T: AsRef<U>` | 可以借用为 `&U` |
+| `T: Deref<Target = U>` | 自动解引用为 `&U` |
+| `F: Fn(A) -> B` | 可调用，不变地借用状态 |
+| `F: FnMut(A) -> B` | 可调用，可能可变地修改状态 |
+| `F: FnOnce(A) -> B` | 可调用恰好一次，可能消耗状态 |
 
-### Lifetime Elision Rules
+### 生命周期省略规则
 
-The compiler inserts lifetimes automatically in three cases (so you don't have to):
+编译器在三种情况下自动插入生命周期（所以你不必）：
 
 ```rust
-// Rule 1: Each reference parameter gets its own lifetime
+// 规则 1：每个引用参数获得独立的生命周期
 // fn foo(x: &str, y: &str)  →  fn foo<'a, 'b>(x: &'a str, y: &'b str)
 
-// Rule 2: If there's exactly ONE input lifetime, it's used for all outputs
+// 规则 2：如果只有一个输入生命周期，它用于所有输出
 // fn foo(x: &str) -> &str   →  fn foo<'a>(x: &'a str) -> &'a str
 
-// Rule 3: If one parameter is &self or &mut self, its lifetime is used
+// 规则 3：如果一个参数是 &self 或 &mut self，使用它的生命周期
 // fn foo(&self, x: &str) -> &str  →  fn foo<'a>(&'a self, x: &str) -> &'a str
 ```
 
-**When you MUST write explicit lifetimes**:
-- Multiple input references and a reference output (compiler can't guess which input)
-- Struct fields that hold references: `struct Ref<'a> { data: &'a str }`
-- `'static` bounds when you need data without borrowed references
+**当你必须显式编写生命周期时**：
+- 多个输入引用和一个引用输出（编译器无法猜测哪个输入）
+- 持有引用的结构体字段：`struct Ref<'a> { data: &'a str }`
+- 当你需要无借用引用的数据时的 `'static` 边界
 
-### Common Derive Traits
+### 常见的 Derive Traits
 
 ```rust
 #[derive(
-    Debug,          // {:?} formatting
+    Debug,          // {:?} 格式化
     Clone,          // .clone()
-    Copy,           // Implicit copy (only for simple types)
-    PartialEq, Eq,  // == comparison
-    PartialOrd, Ord, // < > comparison + sorting
-    Hash,           // HashMap/HashSet key
+    Copy,           // 隐式复制（仅用于简单类型）
+    PartialEq, Eq,  // == 比较
+    PartialOrd, Ord, // < > 比较 + 排序
+    Hash,           // HashMap/HashSet 键
     Default,        // Type::default()
 )]
 struct MyType { /* ... */ }
 ```
 
-### Module Visibility Quick Reference
+### 模块可见性快速参考
 
 ```text
-pub           → visible everywhere
-pub(crate)    → visible within the crate
-pub(super)    → visible to parent module
-pub(in path)  → visible within a specific path
-(nothing)     → private to current module + children
+pub           →  everywhere 可见
+pub(crate)    →  crate 内可见
+pub(super)    →  对父模块可见
+pub(in path)  →  在特定路径内可见
+（无）        →  当前模块 + 子模块私有
 ```
 
-### Further Reading
+### 延伸阅读
 
-| Resource | Why |
+| 资源 | 为什么 |
 |----------|-----|
-| [Rust Design Patterns](https://rust-unofficial.github.io/patterns/) | Catalog of idiomatic patterns and anti-patterns |
-| [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) | Official checklist for polished public APIs |
-| [Rust Atomics and Locks](https://marabos.nl/atomics/) | Mara Bos's deep dive into concurrency primitives |
-| [The Rustonomicon](https://doc.rust-lang.org/nomicon/) | Official guide to unsafe Rust and dark corners |
-| [Error Handling in Rust](https://blog.burntsushi.net/rust-error-handling/) | Andrew Gallant's comprehensive guide |
-| [Jon Gjengset — Crust of Rust series](https://www.youtube.com/playlist?list=PLqbS7AVVErFiWDOAVrPt7aYmnuuOLYvOa) | Deep dives into iterators, lifetimes, channels, etc. |
-| [Effective Rust](https://www.lurklurk.org/effective-rust/) | 35 specific ways to improve your Rust code |
+| [Rust Design Patterns](https://rust-unofficial.github.io/patterns/) | 惯用模式和反模式目录 |
+| [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) | 完善公共 API 的官方清单 |
+| [Rust Atomics and Locks](https://marabos.nl/atomics/) | Mara Bos 的并发原语深入探讨 |
+| [The Rustonomicon](https://doc.rust-lang.org/nomicon/) | Unsafe Rust 和暗角的官方指南 |
+| [Error Handling in Rust](https://blog.burntsushi.net/rust-error-handling/) | Andrew Gallant 的综合指南 |
+| [Jon Gjengset — Crust of Rust series](https://www.youtube.com/playlist?list=PLqbS7AVVErFiWDOAVrPt7aYmnuuOLYvOa) | 迭代器、生命周期、channel 等的深入探讨 |
+| [Effective Rust](https://www.lurklurk.org/effective-rust/) | 35 种改进 Rust 代码的具体方法 |
 
 ***
 
-*End of Rust Patterns & Engineering How-Tos*
+*Rust 模式与工程实践至此结束*
 

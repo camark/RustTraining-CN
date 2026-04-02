@@ -1,19 +1,19 @@
-## Traits vs Duck Typing
+## Traits vs 鸭子类型
 
-> **What you'll learn:** Traits as explicit contracts (vs Python duck typing), `Protocol` (PEP 544) ≈ Trait,
-> generic type bounds with `where` clauses, trait objects (`dyn Trait`) vs static dispatch, and common std traits.
+> **你将学到什么：** Traits 作为显式契约（vs Python 鸭子类型），`Protocol`（PEP 544）≈ Trait，
+> 使用 `where` 子句的泛型类型约束，trait 对象（`dyn Trait`）vs 静态分派，以及常见的标准库 traits。
 >
-> **Difficulty:** 🟡 Intermediate
+> **难度：** 🟡 中级
 
-This is where Rust's type system really shines for Python developers. Python's
-"duck typing" says: "if it walks like a duck and quacks like a duck, it's a duck."
-Rust's traits say: "I'll tell you exactly which duck behaviors I need, at compile time."
+这是 Rust 类型系统真正为 Python 开发者发光发热的地方。Python 的
+"鸭子类型" 说："如果它像鸭子一样走路并且像鸭子一样叫，那它就是鸭子。"
+Rust 的 traits 说："我会在编译时告诉你我具体需要哪些鸭子行为。"
 
-### Python Duck Typing
+### Python 鸭子类型
 ```python
-# Python — duck typing: anything with the right methods works
+# Python —— 鸭子类型：有任何正确方法的东西都能工作
 def total_area(shapes):
-    """Works with anything that has an .area() method."""
+    """适用于任何有 .area() 方法的东西。"""
     return sum(shape.area() for shape in shapes)
 
 class Circle:
@@ -24,23 +24,23 @@ class Rectangle:
     def __init__(self, w, h): self.w, self.h = w, h
     def area(self): return self.w * self.h
 
-# Works at runtime — no inheritance needed!
+# 在运行时工作 —— 不需要继承！
 shapes = [Circle(5), Rectangle(3, 4)]
 print(total_area(shapes))  # 90.54
 
-# But what if something doesn't have .area()?
+# 但如果某个东西没有 .area() 会怎样？
 class Dog:
     def bark(self): return "Woof!"
 
 total_area([Dog()])  # 💥 AttributeError: 'Dog' has no attribute 'area'
-# Error happens at RUNTIME, not at definition time
+# 错误发生在*运行时*，不是定义时
 ```
 
-### Rust Traits — Explicit Duck Typing
+### Rust Traits —— 显式鸭子类型
 ```rust
-// Rust — traits make the "duck" contract explicit
+// Rust —— traits 使"鸭子"契约显式
 trait HasArea {
-    fn area(&self) -> f64;      // Any type that implements this trait has .area()
+    fn area(&self) -> f64;      // 任何实现这个 trait 的类型都有 .area()
 }
 
 struct Circle { radius: f64 }
@@ -58,32 +58,30 @@ impl HasArea for Rectangle {
     }
 }
 
-// The trait constraint is explicit — compiler checks at compile time
+// trait 约束是显式的 —— 编译器在编译时检查
 fn total_area(shapes: &[&dyn HasArea]) -> f64 {
     shapes.iter().map(|s| s.area()).sum()
 }
 
-// Using it:
+// 使用它：
 let shapes: Vec<&dyn HasArea> = vec![&Circle { radius: 5.0 }, &Rectangle { width: 3.0, height: 4.0 }];
 println!("{}", total_area(&shapes));  // 90.54
 
 // struct Dog;
-// total_area(&[&Dog {}]);  // ❌ Compile error: Dog doesn't implement HasArea
+// total_area(&[&Dog {}]);  // ❌ 编译错误：Dog 没有实现 HasArea
 ```
 
-> **Key insight**: Python's duck typing defers errors to runtime. Rust's traits catch
-> them at compile time. Same flexibility, earlier error detection.
+> **关键见解**：Python 的鸭子类型将错误推迟到运行时。Rust 的 traits 在编译时捕获它们。同样的灵活性，更早的错误检测。
 
 ***
 
-## Protocols (PEP 544) vs Traits
+## Protocol (PEP 544) vs Traits
 
-Python 3.8 introduced `Protocol` (PEP 544) for structural subtyping — it's the
-closest Python concept to Rust traits.
+Python 3.8 引入了 `Protocol`（PEP 544）用于结构子类型化 —— 它是最接近 Rust traits 的 Python 概念。
 
 ### Python Protocol
 ```python
-# Python — Protocol (structural typing, like Rust traits)
+# Python —— Protocol（结构类型，类似 Rust traits）
 from typing import Protocol, runtime_checkable
 
 @runtime_checkable
@@ -107,16 +105,16 @@ def print_all(items: list[Printable]) -> None:
     for item in items:
         print(item.to_string())
 
-# Works because User and Product both have to_string()
+# 可行是因为 User 和 Product 都有 to_string()
 print_all([User("Alice"), Product("Widget", 9.99)])
 
-# BUT: mypy checks this, Python runtime does NOT enforce it
-# print_all([42])  # mypy warns, but Python runs it and crashes
+# 但是：mypy 检查这个，Python 运行时不强制执行
+# print_all([42])  # mypy 警告，但 Python 运行它并崩溃
 ```
 
-### Rust Trait (Equivalent, but enforced!)
+### Rust Trait（等价，但强制执行！）
 ```rust
-// Rust — traits are enforced at compile time
+// Rust —— traits 在编译时强制执行
 trait Printable {
     fn to_string(&self) -> String;
 }
@@ -142,28 +140,28 @@ fn print_all(items: &[&dyn Printable]) {
     }
 }
 
-// print_all(&[&42i32]);  // ❌ Compile error: i32 doesn't implement Printable
+// print_all(&[&42i32]);  // ❌ 编译错误：i32 没有实现 Printable
 ```
 
-### Comparison Table
+### 对比表
 
-| Feature | Python Protocol | Rust Trait |
-|---------|-----------------|------------|
-| Structural typing | ✅ (implicit) | ❌ (explicit `impl`) |
-| Checked at | Runtime (or mypy) | Compile time (always) |
-| Default implementations | ❌ | ✅ |
-| Can add to foreign types | ❌ | ✅ (within limits) |
-| Multiple protocols | ✅ | ✅ (multiple traits) |
-| Associated types | ❌ | ✅ |
-| Generic constraints | ✅ (with `TypeVar`) | ✅ (trait bounds) |
+| 特性 | Python Protocol | Rust Trait |
+|------|----------------|------------|
+| 结构类型 | ✅（隐式） | ❌（显式 `impl`） |
+| 检查于 | 运行时（或 mypy） | 编译时（总是） |
+| 默认实现 | ❌ | ✅ |
+| 可以添加到外部类型 | ❌ | ✅（有限制） |
+| 多个 protocols | ✅ | ✅（多个 traits） |
+| 关联类型 | ❌ | ✅ |
+| 泛型约束 | ✅（使用 `TypeVar`） | ✅（trait 约束） |
 
 ***
 
-## Generic Constraints
+## 泛型约束
 
-### Python Generics
+### Python 泛型
 ```python
-# Python — TypeVar for generic functions
+# Python —— TypeVar 用于泛型函数
 from typing import TypeVar, Sequence
 
 T = TypeVar('T')
@@ -171,7 +169,7 @@ T = TypeVar('T')
 def first(items: Sequence[T]) -> T | None:
     return items[0] if items else None
 
-# Bounded TypeVar
+# 有界 TypeVar
 from typing import SupportsFloat
 T = TypeVar('T', bound=SupportsFloat)
 
@@ -179,77 +177,76 @@ def average(items: Sequence[T]) -> float:
     return sum(float(x) for x in items) / len(items)
 ```
 
-### Rust Generics with Trait Bounds
+### Rust 带 Trait 约束的泛型
 ```rust
-// Rust — generics with trait bounds
+// Rust —— 带 trait 约束的泛型
 fn first<T>(items: &[T]) -> Option<&T> {
     items.first()
 }
 
-// With trait bounds — "T must implement these traits"
+// 带 trait 约束 —— "T 必须实现这些 traits"
 fn average<T>(items: &[T]) -> f64
 where
-    T: Into<f64> + Copy,   // T must convert to f64 and be copyable
+    T: Into<f64> + Copy,   // T 必须能转换为 f64 并且可复制
 {
     let sum: f64 = items.iter().map(|&x| x.into()).sum();
     sum / items.len() as f64
 }
 
-// Multiple bounds — "T must implement Display AND Debug AND Clone"
+// 多个约束 —— "T 必须实现 Display AND Debug AND Clone"
 fn log_and_clone<T: std::fmt::Display + std::fmt::Debug + Clone>(item: &T) -> T {
     println!("Display: {}", item);
     println!("Debug: {:?}", item);
     item.clone()
 }
 
-// Shorthand with impl Trait (for simple cases)
+// impl Trait 的简写（用于简单情况）
 fn print_it(item: &impl std::fmt::Display) {
     println!("{}", item);
 }
 ```
 
-### Generics Quick Reference
+### 泛型快速参考
 
-| Python | Rust | Notes |
-|--------|------|-------|
-| `TypeVar('T')` | `<T>` | Unbounded generic |
-| `TypeVar('T', bound=X)` | `<T: X>` | Bounded generic |
-| `Union[int, str]` | `enum` or trait object | Rust has no union types |
-| `Sequence[T]` | `&[T]` (slice) | Borrowed sequence |
-| `Callable[[A], R]` | `Fn(A) -> R` | Function trait |
-| `Optional[T]` | `Option<T>` | Built into the language |
+| Python | Rust | 说明 |
+|--------|------|------|
+| `TypeVar('T')` | `<T>` | 无界泛型 |
+| `TypeVar('T', bound=X)` | `<T: X>` | 有界泛型 |
+| `Union[int, str]` | `enum` 或 trait 对象 | Rust 没有联合类型 |
+| `Sequence[T]` | `&[T]`（切片） | 借用序列 |
+| `Callable[[A], R]` | `Fn(A) -> R` | 函数 trait |
+| `Optional[T]` | `Option<T>` | 内置于语言中 |
 
 ***
 
-## Common Standard Library Traits
+## 常见标准库 Traits
 
-These are Rust's version of Python's "dunder methods" — they define how types
-behave in common situations.
+这些是 Rust 版本的 Python"魔术方法" —— 它们定义类型在常见情况下的行为。
 
-### Display and Debug (Printing)
+### Display 和 Debug（打印）
 ```rust
 use std::fmt;
 
-// Debug — like __repr__ (auto-derivable)
+// Debug —— 类似 __repr__（可自动派生）
 #[derive(Debug)]
 struct Point { x: f64, y: f64 }
-// Now you can: println!("{:?}", point);
+// 现在可以：println!("{:?}", point);
 
-// Display — like __str__ (must implement manually)
+// Display —— 类似 __str__（必须手动实现）
 impl fmt::Display for Point {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}, {})", self.x, self.y)
     }
 }
-// Now you can: println!("{}", point);
+// 现在可以：println!("{}", point);
 ```
 
-### Comparison Traits
+### 比较 Traits
 ```rust
-// PartialEq — like __eq__
-// Eq — total equality (f64 is PartialEq but not Eq because NaN != NaN)
-// PartialOrd — like __lt__, __le__, etc.
-// Ord — total ordering
+// PartialEq —— 类似 __eq__
+// Eq —— 完全相等（f64 是 PartialEq 但不是 Eq，因为 NaN != NaN）
+// PartialOrd —— 类似 __lt__、__le__ 等
+// Ord —— 完全有序
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 struct Student {
@@ -257,57 +254,57 @@ struct Student {
     grade: i32,
 }
 
-// Now students can be: compared, sorted, used as HashMap keys, cloned
+// 现在 students 可以：比较、排序、用作 HashMap 键、克隆
 let mut students = vec![
     Student { name: "Charlie".into(), grade: 85 },
     Student { name: "Alice".into(), grade: 92 },
 ];
-students.sort();  // Uses Ord — sorts by name then grade (struct field order)
+students.sort();  // 使用 Ord —— 按姓名然后成绩排序（结构体字段顺序）
 ```
 
 ### Iterator Trait
 ```rust
-// Implementing Iterator — like Python's __iter__/__next__
+// 实现 Iterator —— 类似 Python 的 __iter__/__next__
 struct Countdown { value: i32 }
 
 impl Iterator for Countdown {
-    type Item = i32;       // What the iterator yields
+    type Item = i32;       // 迭代器产生的类型
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.value > 0 {
             self.value -= 1;
             Some(self.value + 1)
         } else {
-            None             // Iteration complete
+            None             // 迭代完成
         }
     }
 }
 
-// Usage:
+// 用法：
 for n in (Countdown { value: 5 }) {
     println!("{n}");  // 5, 4, 3, 2, 1
 }
 ```
 
-### Common Traits at a Glance
+### 常见 Traits 一览
 
-| Rust Trait | Python Equivalent | Purpose |
-|-----------|-------------------|---------|
-| `Display` | `__str__` | Human-readable string |
-| `Debug` | `__repr__` | Debug string (derivable) |
-| `Clone` | `copy.deepcopy` | Deep copy |
-| `Copy` | (int/float auto-copy) | Implicit copy for simple types |
-| `PartialEq` / `Eq` | `__eq__` | Equality comparison |
-| `PartialOrd` / `Ord` | `__lt__` etc. | Ordering |
-| `Hash` | `__hash__` | Hashable (for dict keys) |
-| `Default` | Default `__init__` | Default values |
-| `From` / `Into` | `__init__` overloads | Type conversions |
-| `Iterator` | `__iter__` / `__next__` | Iteration |
-| `Drop` | `__del__` / `__exit__` | Cleanup |
-| `Add`, `Sub`, `Mul` | `__add__`, `__sub__`, `__mul__` | Operator overloading |
-| `Index` | `__getitem__` | Indexing with `[]` |
-| `Deref` | (no equivalent) | Smart pointer dereferencing |
-| `Send` / `Sync` | (no equivalent) | Thread safety markers |
+| Rust Trait | Python 等价物 | 用途 |
+|-----------|--------------|------|
+| `Display` | `__str__` | 可读字符串 |
+| `Debug` | `__repr__` | Debug 字符串（可派生） |
+| `Clone` | `copy.deepcopy` | 深拷贝 |
+| `Copy` | （int/float 自动拷贝） | 简单类型的隐式拷贝 |
+| `PartialEq` / `Eq` | `__eq__` | 相等性比较 |
+| `PartialOrd` / `Ord` | `__lt__` 等 | 排序 |
+| `Hash` | `__hash__` | 可哈希（用于 dict 键） |
+| `Default` | 默认 `__init__` | 默认值 |
+| `From` / `Into` | `__init__` 重载 | 类型转换 |
+| `Iterator` | `__iter__` / `__next__` | 迭代 |
+| `Drop` | `__del__` / `__exit__` | 清理 |
+| `Add`、`Sub`、`Mul` | `__add__`、`__sub__`、`__mul__` | 运算符重载 |
+| `Index` | `__getitem__` | 使用 `[]` 索引 |
+| `Deref` | （无等价物） | 智能指针解引用 |
+| `Send` / `Sync` | （无等价物） | 线程安全标记 |
 
 ```mermaid
 flowchart TB
@@ -326,16 +323,16 @@ flowchart TB
     style Dynamic fill:#fff3cd
 ```
 
-> **Python equivalent**: Python *always* uses dynamic dispatch (`getattr` at runtime). Rust defaults to static dispatch (monomorphization — the compiler generates specialized code for each concrete type). Use `dyn Trait` only when you need runtime polymorphism.
+> **Python 等价物**：Python *总是* 使用动态分派（运行时 `getattr`）。Rust 默认使用静态分派（单体化 —— 编译器为每个具体类型生成专用代码）。仅当你需要运行时多态时才使用 `dyn Trait`。
 >
-> 📌 **See also**: [Ch. 11 — From/Into Traits](ch11-from-and-into-traits.md) covers the conversion traits (`From`, `Into`, `TryFrom`) in depth.
+> 📌 **另见**：[第 11 章 —— From/Into Traits](ch11-from-and-into-traits.md) 深入涵盖转换 traits（`From`、`Into`、`TryFrom`）。
 
-### Associated Types
+### 关联类型
 
-Rust traits can define *associated types* — type placeholders that each implementor fills in. Python has no equivalent:
+Rust traits 可以定义*关联类型* —— 每个实现者填充的类型占位符。Python 没有等价物：
 
 ```rust
-// Iterator defines an associated type 'Item'
+// Iterator 定义了一个关联类型 'Item'
 trait Iterator {
     type Item;
     fn next(&mut self) -> Option<Self::Item>;
@@ -344,7 +341,7 @@ trait Iterator {
 struct Countdown { remaining: u32 }
 
 impl Iterator for Countdown {
-    type Item = u32;  // This iterator yields u32 values
+    type Item = u32;  // 这个迭代器产生 u32 值
     fn next(&mut self) -> Option<u32> {
         if self.remaining > 0 {
             self.remaining -= 1;
@@ -356,11 +353,11 @@ impl Iterator for Countdown {
 }
 ```
 
-In Python, `__iter__` / `__next__` return `Any` — there's no way to declare "this iterator yields `int`" and have it enforced (type hints with `Iterator[int]` are advisory only).
+在 Python 中，`__iter__` / `__next__` 返回 `Any` —— 没有办法声明"这个迭代器产生 `int`"并强制执行（类型提示 `Iterator[int]` 只是建议性的）。
 
-### Operator Overloading: `__add__` → `impl Add`
+### 运算符重载：`__add__` → `impl Add`
 
-Python uses magic methods (`__add__`, `__mul__`). Rust uses trait implementations — same idea, but type-checked at compile time:
+Python 使用魔术方法（`__add__`、`__mul__`）。Rust 使用 trait 实现 —— 相同的想法，但是在编译时类型检查：
 
 ```python
 # Python
@@ -368,7 +365,7 @@ class Vec2:
     def __init__(self, x, y):
         self.x, self.y = x, y
     def __add__(self, other):
-        return Vec2(self.x + other.x, self.y + other.y)  # No type checking on 'other'
+        return Vec2(self.x + other.x, self.y + other.y)  # 'other' 上没有类型检查
 ```
 
 ```rust
@@ -378,7 +375,7 @@ use std::ops::Add;
 struct Vec2 { x: f64, y: f64 }
 
 impl Add for Vec2 {
-    type Output = Vec2;  // Associated type: what does + return?
+    type Output = Vec2;  // 关联类型：+ 返回什么？
     fn add(self, rhs: Vec2) -> Vec2 {
         Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
     }
@@ -386,22 +383,22 @@ impl Add for Vec2 {
 
 let a = Vec2 { x: 1.0, y: 2.0 };
 let b = Vec2 { x: 3.0, y: 4.0 };
-let c = a + b;  // Type-safe: only Vec2 + Vec2 is allowed
+let c = a + b;  // 类型安全：只允许 Vec2 + Vec2
 ```
 
-Key difference: Python's `__add__` accepts *any* `other` at runtime (you check types manually or get a `TypeError`). Rust's `Add` trait enforces the operand types at compile time — `Vec2 + i32` is a compile error unless you explicitly `impl Add<i32> for Vec2`.
+关键差异：Python 的 `__add__` 在运行时接受*任何* `other`（你手动检查类型或者得到 `TypeError`）。Rust 的 `Add` trait 在编译时强制执行操作数类型 —— `Vec2 + i32` 是编译错误，除非你显式地 `impl Add<i32> for Vec2`。
 
 ---
 
-## Exercises
+## 练习
 
 <details>
-<summary><strong>🏋️ Exercise: Generic Summary Trait</strong> (click to expand)</summary>
+<summary><strong>🏋️ 练习：泛型 Summary Trait</strong>（点击展开）</summary>
 
-**Challenge**: Define a trait `Summary` with a method `fn summarize(&self) -> String`. Implement it for two structs: `Article { title: String, body: String }` and `Tweet { username: String, content: String }`. Then write a function `fn notify(item: &impl Summary)` that prints the summary.
+**挑战**：定义一个 trait `Summary`，带方法 `fn summarize(&self) -> String`。为两个结构体实现它：`Article { title: String, body: String }` 和 `Tweet { username: String, content: String }`。然后编写一个函数 `fn notify(item: &impl Summary)` 打印摘要。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 解决方案</summary>
 
 ```rust
 trait Summary {
@@ -441,11 +438,10 @@ fn main() {
 }
 ```
 
-**Key takeaway**: `&impl Summary` is the Rust equivalent of Python's `Protocol` with a `summarize` method. But Rust checks it at compile time — passing a type that doesn't implement `Summary` is a compile error, not a runtime `AttributeError`.
+**关键要点**：`&impl Summary` 是 Python 的 `Protocol` 带 `summarize` 方法的 Rust 等价物。但是 Rust 在编译时检查它 —— 传递没有实现 `Summary` 的类型是编译错误，不是运行时 `AttributeError`。
 
 </details>
 </details>
-
 ***
 
 

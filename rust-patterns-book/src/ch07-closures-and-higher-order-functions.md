@@ -1,82 +1,82 @@
-# 7. Closures and Higher-Order Functions 🟢
+# 7. 闭包和高阶函数 🟢
 
-> **What you'll learn:**
-> - The three closure traits (`Fn`, `FnMut`, `FnOnce`) and how capture works
-> - Passing closures as parameters and returning them from functions
-> - Combinator chains and iterator adapters for functional-style programming
-> - Designing your own higher-order APIs with the right trait bounds
+> **你将学到什么：**
+> - 三个闭包 trait（`Fn`、`FnMut`、`FnOnce`）以及捕获如何工作
+> - 将闭包作为参数传递和从函数返回
+> - 用于函数式风格编程的组合器链和迭代器适配器
+> - 使用正确的 trait 约束设计你自己的高阶 API
 
-## Fn, FnMut, FnOnce — The Closure Traits
+## Fn、FnMut、FnOnce —— 闭包 Traits
 
-Every closure in Rust implements one or more of three traits, based on how it captures variables:
+Rust 中的每个闭包实现三个 trait 中的一个或多个，基于它如何捕获变量：
 
 ```rust
-// FnOnce — consumes captured values (can only be called once)
+// FnOnce —— 消费捕获的值（只能调用一次）
 let name = String::from("Alice");
 let greet = move || {
-    println!("Hello, {name}!"); // Takes ownership of `name`
-    drop(name); // name is consumed
+    println!("Hello, {name}!"); // 获取 `name` 的所有权
+    drop(name); // name 被消费
 };
-greet(); // ✅ First call
-// greet(); // ❌ Can't call again — `name` was consumed
+greet(); // ✅ 第一次调用
+// greet(); // ❌ 不能再次调用 —— `name` 被消费了
 
-// FnMut — mutably borrows captured values (can be called many times)
+// FnMut —— 可变借用捕获的值（可以调用多次）
 let mut count = 0;
 let mut increment = || {
-    count += 1; // Mutably borrows `count`
+    count += 1; // 可变借用 `count`
 };
 increment(); // count == 1
 increment(); // count == 2
 
-// Fn — immutably borrows captured values (can be called many times, concurrently)
+// Fn —— 不可变借用捕获的值（可以调用多次，并发地）
 let prefix = "Result";
 let display = |x: i32| {
-    println!("{prefix}: {x}"); // Immutably borrows `prefix`
+    println!("{prefix}: {x}"); // 不可变借用 `prefix`
 };
 display(1);
 display(2);
 ```
 
-**The hierarchy**: `Fn` : `FnMut` : `FnOnce` — each is a subtrait of the next:
+**层次结构**：`Fn` : `FnMut` : `FnOnce` —— 每个是下一个的子 trait：
 
 ```text
-FnOnce  ← everything can be called at least once
+FnOnce  ← 所有闭包都至少可以调用一次
  ↑
-FnMut   ← can be called repeatedly (may mutate state)
+FnMut   ← 可以重复调用（可能改变状态）
  ↑
-Fn      ← can be called repeatedly and concurrently (no mutation)
+Fn      ← 可以重复调用且并发（无可变性）
 ```
 
-If a closure implements `Fn`, it also implements `FnMut` and `FnOnce`.
+如果闭包实现 `Fn`，它同时也实现 `FnMut` 和 `FnOnce`。
 
-### Closures as Parameters and Return Values
+### 闭包作为参数和返回值
 
 ```rust
-// --- Parameters ---
+// --- 参数 ---
 
-// Static dispatch (monomorphized — fastest)
+// 静态分发（单态化 —— 最快）
 fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {
     f(f(x))
 }
 
-// Also written with impl Trait:
+// 也可以用 impl Trait 书写：
 fn apply_twice_v2(f: impl Fn(i32) -> i32, x: i32) -> i32 {
     f(f(x))
 }
 
-// Dynamic dispatch (trait object — flexible, slight overhead)
+// 动态分发（trait 对象 —— 灵活，轻微开销）
 fn apply_dyn(f: &dyn Fn(i32) -> i32, x: i32) -> i32 {
     f(x)
 }
 
-// --- Return Values ---
+// --- 返回值 ---
 
-// Can't return closures by value without boxing (they have anonymous types):
+// 不能不经 boxing 按值返回闭包（它们有匿名类型）：
 fn make_adder(n: i32) -> Box<dyn Fn(i32) -> i32> {
     Box::new(move |x| x + n)
 }
 
-// With impl Trait (simpler, monomorphized, but can't be dynamic):
+// 使用 impl Trait（更简单，单态化，但不能动态）：
 fn make_adder_v2(n: i32) -> impl Fn(i32) -> i32 {
     move |x| x + n
 }
@@ -90,12 +90,12 @@ fn main() {
 }
 ```
 
-### Combinator Chains and Iterator Adapters
+### 组合器链和迭代器适配器
 
-Higher-order functions shine with iterators — this is idiomatic Rust:
+高阶函数与迭代器一起大放异彩 —— 这是地道 Rust：
 
 ```rust
-// C-style loop (imperative):
+// C 风格循环（命令式）：
 let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let mut result = Vec::new();
 for x in &data {
@@ -104,39 +104,39 @@ for x in &data {
     }
 }
 
-// Idiomatic Rust (functional combinator chain):
+// 地道 Rust（函数式组合器链）：
 let result: Vec<i32> = data.iter()
     .filter(|&&x| x % 2 == 0)
     .map(|&x| x * x)
     .collect();
 
-// Same performance — iterators are lazy and optimized by LLVM
+// 相同性能 —— 迭代器是惰性且被 LLVM 优化的
 assert_eq!(result, vec![4, 16, 36, 64, 100]);
 ```
 
-**Common combinators cheat sheet**:
+**常用组合器速查表**：
 
-| Combinator | What It Does | Example |
+| 组合器 | 它做什么 | 示例 |
 |-----------|-------------|---------|
-| `.map(f)` | Transform each element | `.map(|x| x * 2)` |
-| `.filter(p)` | Keep elements where predicate is true | `.filter(|x| x > &5)` |
-| `.filter_map(f)` | Map + filter in one step (returns `Option`) | `.filter_map(|x| x.parse().ok())` |
-| `.flat_map(f)` | Map then flatten nested iterators | `.flat_map(|s| s.chars())` |
-| `.fold(init, f)` | Reduce to single value (like `Aggregate` in C#) | `.fold(0, |acc, x| acc + x)` |
-| `.any(p)` / `.all(p)` | Short-circuit boolean check | `.any(|x| x > 100)` |
-| `.enumerate()` | Add index | `.enumerate().map(|(i, x)| ...)` |
-| `.zip(other)` | Pair with another iterator | `.zip(labels.iter())` |
-| `.take(n)` / `.skip(n)` | First/skip N elements | `.take(10)` |
-| `.chain(other)` | Concatenate two iterators | `.chain(extra.iter())` |
-| `.peekable()` | Look ahead without consuming | `.peek()` |
-| `.collect()` | Gather into a collection | `.collect::<Vec<_>>()` |
+| `.map(f)` | 转换每个元素 | `.map(|x| x * 2)` |
+| `.filter(p)` | 保留谓词为真的元素 | `.filter(|x| x > &5)` |
+| `.filter_map(f)` | 一步完成 map + filter（返回 `Option`） | `.filter_map(|x| x.parse().ok())` |
+| `.flat_map(f)` | map 然后展平嵌套迭代器 | `.flat_map(|s| s.chars())` |
+| `.fold(init, f)` | 归约为单个值（如 C# 中的 `Aggregate`） | `.fold(0, |acc, x| acc + x)` |
+| `.any(p)` / `.all(p)` | 短路布尔检查 | `.any(|x| x > 100)` |
+| `.enumerate()` | 添加索引 | `.enumerate().map(|(i, x)| ...)` |
+| `.zip(other)` | 与另一个迭代器配对 | `.zip(labels.iter())` |
+| `.take(n)` / `.skip(n)` | 取前 N 个/跳过 N 个元素 | `.take(10)` |
+| `.chain(other)` | 连接两个迭代器 | `.chain(extra.iter())` |
+| `.peekable()` | 向前查看但不消费 | `.peek()` |
+| `.collect()` | 收集到集合中 | `.collect::<Vec<_>>()` |
 
-### Implementing Your Own Higher-Order APIs
+### 实现你自己的高阶 API
 
-Design APIs that accept closures for customization:
+设计接受闭包进行定制的 API：
 
 ```rust
-/// Retry an operation with a configurable strategy
+/// 使用可配置策略重试操作
 fn retry<T, E, F, S>(
     mut operation: F,
     mut should_retry: S,
@@ -144,7 +144,7 @@ fn retry<T, E, F, S>(
 ) -> Result<T, E>
 where
     F: FnMut() -> Result<T, E>,
-    S: FnMut(&E, usize) -> bool, // (error, attempt) → try again?
+    S: FnMut(&E, usize) -> bool, // (错误，尝试次数) → 重试？
 {
     for attempt in 1..=max_attempts {
         match operation() {
@@ -158,7 +158,7 @@ where
     unreachable!()
 }
 
-// Usage — caller controls retry logic:
+// 用法 —— 调用者控制重试逻辑：
 ```
 
 ```rust
@@ -171,47 +171,40 @@ let result = retry(
     || connect_to_database(),
     |err, attempt| {
         eprintln!("Attempt {attempt} failed: {err}");
-        true // Always retry
+        true // 总是重试
     },
     3,
 );
 
-// Usage — retry only specific errors:
+// 用法 —— 仅重试特定错误：
 let result = retry(
     || http_get(url),
-    |err, _| err.is_transient(), // Only retry transient errors
+    |err, _| err.is_transient(), // 仅重试瞬时错误
     5,
 );
 ```
 
-### The `with` Pattern — Bracketed Resource Access
+### `with` 模式 —— 括号化资源访问
 
-Sometimes you need to guarantee that a resource is in a specific state for the
-duration of an operation, and restored afterward — regardless of how the caller's
-code exits (early return, `?`, panic). Instead of exposing the resource directly
-and hoping callers remember to set up and tear down, **lend it through a closure**:
+有时你需要保证资源在操作期间处于特定状态，并在之后恢复 —— 无论调用者代码如何退出（提前返回、`?`、panic）。与其直接暴露资源并希望调用者记得设置和清理，**通过闭包借出它**：
 
 ```text
-set up → call closure with resource → tear down
+设置 → 用资源调用闭包 → 清理
 ```
 
-The caller never touches setup or teardown. They can't forget, can't get it wrong,
-and can't hold the resource beyond the closure's scope.
+调用者从不接触设置或清理。他们不会忘记、不会弄错、也不能在闭包作用域之外持有资源。
 
-#### Example: GPIO Pin Direction
+#### 示例：GPIO 引脚方向
 
-A GPIO controller manages pins that support bidirectional I/O. Some callers need
-the pin configured as input, others as output. Rather than exposing raw pin access
-and trusting callers to set direction correctly, the controller provides
-`with_pin_input` and `with_pin_output`:
+GPIO 控制器管理支持双向 I/O 的引脚。一些调用者需要引脚配置为输入，另一些需要输出。与其暴露原始引脚访问并信任调用者正确设置方向，控制器提供 `with_pin_input` 和 `with_pin_output`：
 
 ```rust
-/// GPIO pin direction — not public, callers never set this directly.
+/// GPIO 引脚方向 —— 不公开，调用者从不直接设置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Direction { In, Out }
 
-/// A GPIO pin handle lent to the closure. Cannot be stored or cloned —
-/// it exists only for the duration of the callback.
+/// 借给闭包的 GPIO 引脚句柄。不能存储或克隆 ——
+/// 它只存在于回调期间。
 pub struct GpioPin<'a> {
     pin_number: u8,
     _controller: &'a GpioController,
@@ -219,13 +212,13 @@ pub struct GpioPin<'a> {
 
 impl GpioPin<'_> {
     pub fn read(&self) -> bool {
-        // Read pin level from hardware register
+        // 从硬件寄存器读取引脚电平
         println!("  reading pin {}", self.pin_number);
-        true // stub
+        true // 占位
     }
 
     pub fn write(&self, high: bool) {
-        // Drive pin level via hardware register
+        // 通过硬件寄存器驱动引脚电平
         println!("  writing pin {} = {high}", self.pin_number);
     }
 }
@@ -241,8 +234,8 @@ impl GpioController {
         }
     }
 
-    /// Configure pin as input, run the closure, restore state.
-    /// The caller receives a `GpioPin` that lives only for the callback.
+    /// 配置引脚为输入，运行闭包，恢复状态。
+    /// 调用者接收一个只存在于回调期间的 `GpioPin`。
     pub fn with_pin_input<R>(
         &self,
         pin: u8,
@@ -252,14 +245,14 @@ impl GpioController {
         self.set_direction(pin, Direction::In);
         let handle = GpioPin { pin_number: pin, _controller: self };
         let result = f(&handle);
-        // Restore previous direction (or leave as-is — policy choice)
+        // 恢复之前的方向（或保持原样 —— 策略选择）
         if let Some(dir) = prev {
             self.set_direction(pin, dir);
         }
         result
     }
 
-    /// Configure pin as output, run the closure, restore state.
+    /// 配置引脚为输出，运行闭包，恢复状态。
     pub fn with_pin_output<R>(
         &self,
         pin: u8,
@@ -284,76 +277,65 @@ impl GpioController {
 fn main() {
     let gpio = GpioController::new();
 
-    // Caller 1: needs input — doesn't know or care how direction is managed
+    // 调用者 1：需要输入 —— 不知道也不关心方向如何管理
     let level = gpio.with_pin_input(4, |pin| {
         pin.read()
     });
     println!("Pin 4 level: {level}");
 
-    // Caller 2: needs output — same API shape, different guarantee
+    // 调用者 2：需要输出 —— 相同的 API 形态，不同的保证
     gpio.with_pin_output(4, |pin| {
         pin.write(true);
-        // do more work...
+        // 做更多工作...
         pin.write(false);
     });
 
-    // Can't use the pin handle outside the closure:
+    // 不能在闭包之外使用引脚句柄：
     // let escaped_pin = gpio.with_pin_input(4, |pin| pin);
-    // ❌ ERROR: borrowed value does not live long enough
+    // ❌ 错误：借用的值存活时间不够长
 }
 ```
 
-**What the `with` pattern guarantees:**
-- Direction is **always set before** the caller's code runs
-- Direction is **always restored after**, even if the closure returns early
-- The `GpioPin` handle **cannot escape** the closure — the borrow checker enforces
-  this via the lifetime tied to the controller reference
-- Callers never import `Direction`, never call `set_direction` — the API is
-  impossible to misuse
+**`with` 模式的保证：**
+- 方向**总是在**调用者代码运行**之前设置**
+- 方向**总是在之后恢复**，即使闭包提前返回
+- `GpioPin` 句柄**不能逃逸**闭包 —— 借用检查器通过与控制器引用绑定的生命周期强制执行
+- 调用者从不导入 `Direction`，从不调用 `set_direction` —— API 无法误用
 
-#### Where This Pattern Appears
+#### 这个模式出现的地方
 
-The `with` pattern shows up throughout Rust's standard library and ecosystem:
+`with` 模式出现在 Rust 标准库和生态系统的各个地方：
 
-| API | Setup | Callback | Teardown |
+| API | 设置 | 回调 | 清理 |
 |-----|-------|----------|----------|
-| `std::thread::scope` | Create scope | `\|s\| { s.spawn(...) }` | Join all threads |
-| `Mutex::lock` | Acquire lock | Use `MutexGuard` (RAII, not closure, but same idea) | Release on drop |
-| `tempfile::tempdir` | Create temp directory | Use path | Delete on drop |
-| `std::io::BufWriter::new` | Buffer writes | Write operations | Flush on drop |
-| GPIO `with_pin_*` (above) | Set direction | Use pin handle | Restore direction |
+| `std::thread::scope` | 创建作用域 | `\|s\| { s.spawn(...) }` | join 所有线程 |
+| `Mutex::lock` | 获取锁 | 使用 `MutexGuard`（RAII，不是闭包，但相同思路） | drop 时释放 |
+| `tempfile::tempdir` | 创建临时目录 | 使用路径 | drop 时删除 |
+| `std::io::BufWriter::new` | 缓冲写入 | 写入操作 | drop 时刷新 |
+| GPIO `with_pin_*`（上面） | 设置方向 | 使用引脚句柄 | 恢复方向 |
 
-The closure-based variant is strongest when:
-- **Setup and teardown are paired** and forgetting either is a bug
-- **The resource shouldn't outlive the operation** — the borrow checker enforces
-  this naturally
-- **Multiple configurations exist** (`with_pin_input` vs `with_pin_output`) — each
-  `with_*` method encapsulates a different setup without exposing the configuration
-  to the caller
+当以下情况时，基于闭包的变体最强大：
+- **设置和清理是成对的**，忘记其中任何一个都是 bug
+- **资源不应该超过操作存活** —— 借用检查器自然地强制执行
+- **存在多种配置**（`with_pin_input` vs `with_pin_output`） —— 每个 `with_*` 方法封装不同的设置，不向调用者暴露配置
 
-> **`with` vs RAII (Drop):** Both guarantee cleanup. Use RAII / `Drop` when the
-> caller needs to hold the resource across multiple statements and function calls.
-> Use `with` when the operation is **bracketed** — one setup, one block of work,
-> one teardown — and you don't want the caller to be able to break the bracket.
+> **`with` vs RAII (Drop)：** 两者都保证清理。当调用者需要在多个语句和函数调用中持有资源时使用 RAII / `Drop`。当操作是**括号化**的 —— 一次设置、一块工作、一次清理 —— 且你不希望调用者能够破坏括号时使用 `with`。
 
-> **FnMut vs Fn in API design**: Use `FnMut` as the default bound — it's
-> the most flexible (callers can pass `Fn` or `FnMut` closures). Only
-> require `Fn` if you need to call the closure concurrently (e.g., from
-> multiple threads). Only require `FnOnce` if you call it exactly once.
+> **API 设计中的 FnMut vs Fn**：默认使用 `FnMut` 约束 —— 它是最灵活的（调用者可以传递 `Fn` 或 `FnMut` 闭包）。仅当你需要并发调用闭包（例如，从多个线程）时才要求 `Fn`。仅当你恰好调用一次时才要求 `FnOnce`。
 
-> **Key Takeaways — Closures**
-> - `Fn` borrows, `FnMut` borrows mutably, `FnOnce` consumes — accept the weakest bound your API needs
-> - `impl Fn` in parameters, `Box<dyn Fn>` for storage, `impl Fn` in return (or `Box<dyn Fn>` if dynamic)
-> - Combinator chains (`map`, `filter`, `and_then`) compose cleanly and inline to tight loops
-> - The `with` pattern (bracketed access via closure) guarantees setup/teardown and prevents resource escape — use it when the caller shouldn't manage configuration lifecycle
+> **关键要点 —— 闭包**
+> - `Fn` 借用，`FnMut` 可变借用，`FnOnce` 消费 —— 接受你的 API 需要的最弱约束
+> - 参数中用 `impl Fn`，存储用 `Box<dyn Fn>`，返回用 `impl Fn`（或 `Box<dyn Fn>` 如果需要动态）
+> - 组合器链（`map`、`filter`、`and_then`）组合清晰且内联为紧凑循环
+> - `with` 模式（通过闭包括号化访问）保证设置/清理并防止资源逃逸 —— 当调用者不应该管理配置生命周期时使用它
 
-> **See also:** [Ch 2 — Traits In Depth](ch02-traits-in-depth.md) for how `Fn`/`FnMut`/`FnOnce` relate to trait objects. [Ch 8 — Functional vs. Imperative](ch08-functional-vs-imperative-when-elegance-wins.md) for when to choose combinators over loops. [Ch 15 — API Design](ch15-crate-architecture-and-api-design.md) for ergonomic parameter patterns.
+> **另见：**[第 2 章 — Traits 深入](ch02-traits-in-depth.md) 了解 `Fn`/`FnMut`/`FnOnce` 如何与 trait 对象关联。[第 8 章 — 函数式 vs 命令式](ch08-functional-vs-imperative-when-elegance-wins.md) 了解何时选择组合器而非循环。[第 15 章 — API 设计](ch15-crate-architecture-and-api-design.md) 了解符合人体工学的参数模式。
 
 ```mermaid
 graph TD
-    FnOnce["FnOnce<br>(can call once)"]
-    FnMut["FnMut<br>(can call many times,<br>may mutate captures)"]
-    Fn["Fn<br>(can call many times,<br>immutable captures)"]
+    FnOnce["FnOnce<br>(可以调用一次)"]
+    FnMut["FnMut<br>(可以调用多次，<br>可能改变捕获)"]
+    Fn["Fn<br>(可以调用多次，<br>不可变捕获)"]
 
     Fn -->|"implements"| FnMut
     FnMut -->|"implements"| FnOnce
@@ -363,16 +345,16 @@ graph TD
     style FnOnce fill:#fadbd8,stroke:#e74c3c,color:#000
 ```
 
-> Every `Fn` is also `FnMut`, and every `FnMut` is also `FnOnce`. Accept `FnMut` by default — it’s the most flexible bound for callers.
+> 每个 `Fn` 也是 `FnMut`，每个 `FnMut` 也是 `FnOnce`。默认接受 `FnMut` —— 它是对调用者最灵活的约束。
 
 ---
 
-### Exercise: Higher-Order Combinator Pipeline ★★ (~25 min)
+### 练习：高阶组合器管道 ★★（约 25 分钟）
 
-Create a `Pipeline` struct that chains transformations. It should support `.pipe(f)` to add a transformation and `.execute(input)` to run the full chain.
+创建一个 `Pipeline` 结构体来链接转换。它应该支持 `.pipe(f)` 添加转换和 `.execute(input)` 运行完整链。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 答案</summary>
 
 ```rust
 struct Pipeline<T> {
@@ -416,4 +398,3 @@ fn main() {
 </details>
 
 ***
-

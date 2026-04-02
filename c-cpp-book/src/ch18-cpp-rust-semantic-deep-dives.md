@@ -1,41 +1,39 @@
-## C++ → Rust Semantic Deep Dives
+## C++ → Rust 语义深入探讨
 
-> **What you'll learn:** Detailed mappings for C++ concepts that don't have obvious Rust equivalents — the four named casts, SFINAE vs trait bounds, CRTP vs associated types, and other common friction points during translation.
+> **你将学到什么：** C++ 概念到 Rust 等价物的详细映射 —— 四个命名转换、SFINAE vs trait 约束、CRTP vs 关联类型，以及其他翻译过程中的常见摩擦点。
 
-The sections below map C++ concepts that don't have an obvious 1:1 Rust
-equivalent. These differences frequently trip up C++ programmers during
-translation work.
+下面的章节映射 C++ 中没有明显 1:1 Rust 等价物的概念。这些差异在翻译工作期间经常绊倒 C++ 程序员。
 
-### Casting Hierarchy: Four C++ Casts → Rust Equivalents
+### 转换层次结构：四个 C++ 转换 → Rust 等价物
 
-C++ has four named casts. Rust replaces them with different, more explicit mechanisms:
+C++ 有四个命名转换。Rust 用不同的、更显式的机制替换它们：
 
 ```cpp
-// C++ casting hierarchy
-int i = static_cast<int>(3.14);            // 1. Numeric / up-cast
-Derived* d = dynamic_cast<Derived*>(base); // 2. Runtime downcasting
-int* p = const_cast<int*>(cp);              // 3. Cast away const
-auto* raw = reinterpret_cast<char*>(&obj); // 4. Bit-level reinterpretation
+// C++ 转换层次结构
+int i = static_cast<int>(3.14);            // 1. 数值转换 / 向上转换
+Derived* d = dynamic_cast<Derived*>(base); // 2. 运行时向下转换
+int* p = const_cast<int*>(cp);              // 3. 移除 const
+auto* raw = reinterpret_cast<char*>(&obj); // 4. 位级重新解释
 ```
 
-| C++ Cast | Rust Equivalent | Safety | Notes |
+| C++ 转换 | Rust 等价物 | 安全性 | 注释 |
 |----------|----------------|--------|-------|
-| `static_cast` (numeric) | `as` keyword | Safe but can truncate/wrap | `let i = 3.14_f64 as i32;` — truncates to 3 |
-| `static_cast` (numeric, checked) | `From`/`Into` | Safe, compile-time verified | `let i: i32 = 42_u8.into();` — only widens |
-| `static_cast` (numeric, fallible) | `TryFrom`/`TryInto` | Safe, returns `Result` | `let i: u8 = 300_u16.try_into()?;` — returns Err |
-| `dynamic_cast` (downcast) | `match` on enum / `Any::downcast_ref` | Safe | Pattern matching for enums; `Any` for trait objects |
-| `const_cast` | No equivalent | | Rust has no way to cast away `&` → `&mut` in safe code. Use `Cell`/`RefCell` for interior mutability |
-| `reinterpret_cast` | `std::mem::transmute` | **`unsafe`** | Reinterprets bit pattern. Almost always wrong — prefer `from_le_bytes()` etc. |
+| `static_cast` (数值) | `as` 关键字 | 安全但可能截断/回绕 | `let i = 3.14_f64 as i32;` —— 截断为 3 |
+| `static_cast` (数值，检查) | `From`/`Into` | 安全，编译时验证 | `let i: i32 = 42_u8.into();` —— 仅 widening |
+| `static_cast` (数值，可失败) | `TryFrom`/`TryInto` | 安全，返回 `Result` | `let i: u8 = 300_u16.try_into()?;` —— 返回 Err |
+| `dynamic_cast` (向下转换) | enum 上的 `match` / `Any::downcast_ref` | 安全 | enum 用模式匹配；trait 对象用 `Any` |
+| `const_cast` | 无等价物 | | Rust 在安全代码中无法将 `&` 转换为 `&mut`。使用 `Cell`/`RefCell` 实现内部可变性 |
+| `reinterpret_cast` | `std::mem::transmute` | **`unsafe`** | 重新解释位模式。几乎总是错误的 —— 优先使用 `from_le_bytes()` 等 |
 
 ```rust
-// Rust equivalents:
+// Rust 等价物：
 
-// 1. Numeric casts — prefer From/Into over `as`
-let widened: u32 = 42_u8.into();             // Infallible widening — always prefer
-let truncated = 300_u16 as u8;                // ⚠ Wraps to 44! Silent data loss
-let checked: Result<u8, _> = 300_u16.try_into(); // Err — safe fallible conversion
+// 1. 数值转换 —— 优先使用 From/Into 而不是 `as`
+let widened: u32 = 42_u8.into();             // 不可失败的 widening —— 总是优先
+let truncated = 300_u16 as u8;                // ⚠ 回绕到 44！静默数据丢失
+let checked: Result<u8, _> = 300_u16.try_into(); // Err —— 安全的可失败转换
 
-// 2. Downcast: enum (preferred) or Any (when needed for type erasure)
+// 2. 向下转换：enum（首选）或 Any（需要类型擦除时使用）
 use std::any::Any;
 
 fn handle_any(val: &dyn Any) {
@@ -46,58 +44,54 @@ fn handle_any(val: &dyn Any) {
     }
 }
 
-// 3. "const_cast" → interior mutability (no unsafe needed)
+// 3. "const_cast" → 内部可变性（无需 unsafe）
 use std::cell::Cell;
 struct Sensor {
-    read_count: Cell<u32>,  // Mutate through &self
+    read_count: Cell<u32>,  // 通过 &self 可变
 }
 impl Sensor {
     fn read(&self) -> f64 {
-        self.read_count.set(self.read_count.get() + 1); // &self, not &mut self
+        self.read_count.set(self.read_count.get() + 1); // &self，不是 &mut self
         42.0
     }
 }
 
-// 4. reinterpret_cast → transmute (almost never needed)
-// Prefer safe alternatives:
-let bytes: [u8; 4] = 0x12345678_u32.to_ne_bytes();  // ✅ Safe
-let val = u32::from_ne_bytes(bytes);                   // ✅ Safe
-// unsafe { std::mem::transmute::<u32, [u8; 4]>(val) } // ❌ Avoid
+// 4. reinterpret_cast → transmute（几乎从不需要）
+// 优先使用安全的替代方案：
+let bytes: [u8; 4] = 0x12345678_u32.to_ne_bytes();  // ✅ 安全
+let val = u32::from_ne_bytes(bytes);                   // ✅ 安全
+// unsafe { std::mem::transmute::<u32, [u8; 4]>(val) } // ❌ 避免
 ```
 
-> **Guideline**: In idiomatic Rust, `as` should be rare (use `From`/`Into`
-> for widening, `TryFrom`/`TryInto` for narrowing), `transmute` should be
-> exceptional, and `const_cast` has no equivalent because interior mutability
-> types make it unnecessary.
+> **指南**：在惯用 Rust 中，`as` 应该是罕见的（对 widening 使用 `From`/`Into`，对 narrowing 使用 `TryFrom`/`TryInto`），`transmute` 应该是例外的，而 `const_cast` 没有等价物，因为内部可变性类型使其不必要。
 
 ---
 
-### Preprocessor → `cfg`, Feature Flags, and `macro_rules!`
+### 预处理器 → `cfg`、功能标志和 `macro_rules!`
 
-C++ relies heavily on the preprocessor for conditional compilation, constants, and
-code generation. Rust replaces all of these with first-class language features.
+C++ 严重依赖预处理器进行条件编译、常量和代码生成。Rust 用一流的语言功能替换所有这些。
 
-#### `#define` constants → `const` or `const fn`
+#### `#define` 常量 → `const` 或 `const fn`
 
 ```cpp
 // C++
 #define MAX_RETRIES 5
 #define BUFFER_SIZE (1024 * 64)
-#define SQUARE(x) ((x) * (x))  // Macro — textual substitution, no type safety
+#define SQUARE(x) ((x) * (x))  // 宏 —— 文本替换，无类型安全
 ```
 
 ```rust
-// Rust — type-safe, scoped, no textual substitution
+// Rust —— 类型安全、作用域、无文本替换
 const MAX_RETRIES: u32 = 5;
 const BUFFER_SIZE: usize = 1024 * 64;
-const fn square(x: u32) -> u32 { x * x }  // Evaluated at compile time
+const fn square(x: u32) -> u32 { x * x }  // 编译时计算
 
-// Can be used in const contexts:
-const AREA: u32 = square(12);  // Computed at compile time
+// 可在 const 上下文中使用：
+const AREA: u32 = square(12);  // 编译时计算
 static BUFFER: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 ```
 
-#### `#ifdef` / `#if` → `#[cfg()]` and `cfg!()`
+#### `#ifdef` / `#if` → `#[cfg()]` 和 `cfg!()`
 
 ```cpp
 // C++
@@ -113,39 +107,39 @@ static BUFFER: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 ```
 
 ```rust
-// Rust — attribute-based conditional compilation
+// Rust —— 基于属性的条件编译
 #[cfg(debug_assertions)]
 fn log_verbose(msg: &str) { eprintln!("[VERBOSE] {msg}"); }
 
 #[cfg(not(debug_assertions))]
-fn log_verbose(_msg: &str) { /* compiled away in release */ }
+fn log_verbose(_msg: &str) { /* release 时编译为空 */ }
 
-// Combine conditions:
+// 组合条件：
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn use_x86_path() { /* ... */ }
 
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 fn use_generic_path() { /* ... */ }
 
-// Runtime check (condition is still compile-time, but usable in expressions):
+// 运行时检查（条件仍是编译时的，但可在表达式中使用）：
 if cfg!(target_os = "windows") {
     println!("Running on Windows");
 }
 ```
 
-#### Feature flags in `Cargo.toml`
+#### `Cargo.toml` 中的功能标志
 
 ```toml
-# Cargo.toml — replace #ifdef FEATURE_FOO
+// Cargo.toml —— 替换 #ifdef FEATURE_FOO
 [features]
 default = ["json"]
-json = ["dep:serde_json"]       # Optional dependency
-verbose-logging = []            # Flag with no extra dependency
-gpu-support = ["dep:cuda-sys"]  # Optional GPU support
+json = ["dep:serde_json"]       # 可选依赖
+verbose-logging = []            # 无额外依赖的标志
+gpu-support = ["dep:cuda-sys"]  # 可选 GPU 支持
 ```
 
 ```rust
-// Conditional code based on feature flags:
+// 基于功能标志的条件代码：
 #[cfg(feature = "json")]
 pub fn parse_config(data: &str) -> Result<Config, Error> {
     serde_json::from_str(data).map_err(Error::from)
@@ -157,20 +151,20 @@ macro_rules! verbose {
 }
 #[cfg(not(feature = "verbose-logging"))]
 macro_rules! verbose {
-    ($($arg:tt)*) => { }; // Compiles to nothing
+    ($($arg:tt)*) => { }; // 编译为空
 }
 ```
 
 #### `#define MACRO(x)` → `macro_rules!`
 
 ```cpp
-// C++ — textual substitution, notoriously error-prone
+// C++ —— 文本替换，众所周知的容易出错
 #define DIAG_CHECK(cond, msg) \
     do { if (!(cond)) { log_error(msg); return false; } } while(0)
 ```
 
 ```rust
-// Rust — hygienic, type-checked, operates on syntax tree
+// Rust —— 卫生、类型检查、操作语法树
 macro_rules! diag_check {
     ($cond:expr, $msg:expr) => {
         if !($cond) {
@@ -187,23 +181,23 @@ fn run_test() -> Result<(), DiagError> {
 }
 ```
 
-| C++ Preprocessor | Rust Equivalent | Advantage |
+| C++ 预处理器 | Rust 等价物 | 优势 |
 |-----------------|----------------|-----------|
-| `#define PI 3.14` | `const PI: f64 = 3.14;` | Typed, scoped, visible to debugger |
-| `#define MAX(a,b) ((a)>(b)?(a):(b))` | `macro_rules!` or generic `fn max<T: Ord>` | No double-evaluation bugs |
-| `#ifdef DEBUG` | `#[cfg(debug_assertions)]` | Checked by compiler, no typo risk |
-| `#ifdef FEATURE_X` | `#[cfg(feature = "x")]` | Cargo manages features; dependency-aware |
-| `#include "header.h"` | `mod module;` + `use module::Item;` | No include guards, no circular includes |
-| `#pragma once` | Not needed | Each `.rs` file is a module — included exactly once |
+| `#define PI 3.14` | `const PI: f64 = 3.14;` | 类型化、作用域、调试器可见 |
+| `#define MAX(a,b) ((a)>(b)?(a):(b))` | `macro_rules!` 或泛型 `fn max<T: Ord>` | 无双倍求值 bug |
+| `#ifdef DEBUG` | `#[cfg(debug_assertions)]` | 编译器检查，无拼写错误风险 |
+| `#ifdef FEATURE_X` | `#[cfg(feature = "x")]` | Cargo 管理功能；依赖感知 |
+| `#include "header.h"` | `mod module;` + `use module::Item;` | 无包含保护、无循环包含 |
+| `#pragma once` | 不需要 | 每个 `.rs` 文件是模块 —— 仅包含一次 |
 
 ---
 
-### Header Files and `#include` → Modules and `use`
+### 头文件和 `#include` → 模块和 `use`
 
-In C++, the compilation model revolves around textual inclusion:
+在 C++ 中，编译模型围绕文本包含：
 
 ```cpp
-// widget.h — every translation unit that uses Widget includes this
+// widget.h —— 每个使用 Widget 的翻译单元包含这个
 #pragma once
 #include <string>
 #include <vector>
@@ -219,18 +213,18 @@ private:
 ```
 
 ```cpp
-// widget.cpp — separate definition
+// widget.cpp —— 独立定义
 #include "widget.h"
 Widget::Widget(std::string name) : name_(std::move(name)) {}
 void Widget::activate() { /* ... */ }
 ```
 
-In Rust, there are **no header files, no forward declarations, no include guards**:
+在 Rust 中，**没有头文件、没有前向声明、无包含保护**：
 
 ```rust
-// src/widget.rs — declaration AND definition in one file
+// src/widget.rs —— 声明和定义在一个文件中
 pub struct Widget {
-    name: String,         // Private by default
+    name: String,         // 默认私有
     data: Vec<i32>,
 }
 
@@ -243,8 +237,8 @@ impl Widget {
 ```
 
 ```rust
-// src/main.rs — import by module path
-mod widget;  // Tells compiler to include src/widget.rs
+// src/main.rs —— 通过模块路径导入
+mod widget;  // 告诉编译器包含 src/widget.rs
 use widget::Widget;
 
 fn main() {
@@ -253,27 +247,26 @@ fn main() {
 }
 ```
 
-| C++ | Rust | Why it's better |
+| C++ | Rust | 为什么更好 |
 |-----|------|-----------------|
-| `#include "foo.h"` | `mod foo;` in parent + `use foo::Item;` | No textual inclusion, no ODR violations |
-| `#pragma once` / include guards | Not needed | Each `.rs` file is a module — compiled once |
-| Forward declarations | Not needed | Compiler sees entire crate; order doesn't matter |
-| `class Foo;` (incomplete type) | Not needed | No separate declaration/definition split |
-| `.h` + `.cpp` for each class | Single `.rs` file | No declaration/definition mismatch bugs |
-| `using namespace std;` | `use std::collections::HashMap;` | Always explicit — no global namespace pollution |
-| Nested `namespace a::b` | Nested `mod a { mod b { } }` or `a/b.rs` | File system mirrors module tree |
+| `#include "foo.h"` | 父级中的 `mod foo;` + `use foo::Item;` | 无文本包含、无 ODR 违规 |
+| `#pragma once` / 包含保护 | 不需要 | 每个 `.rs` 文件是模块 —— 编译一次 |
+| 前向声明 | 不需要 | 编译器看到整个 crate；顺序无关 |
+| `class Foo;` (不完整类型) | 不需要 | 无独立的声明/定义分离 |
+| 每个类的 `.h` + `.cpp` | 单个 `.rs` 文件 | 无声明/定义不匹配 bug |
+| `using namespace std;` | `use std::collections::HashMap;` | 总是显式 —— 无全局命名空间污染 |
+| 嵌套 `namespace a::b` | 嵌套 `mod a { mod b { } }` 或 `a/b.rs` | 文件系统镜像模块树 |
 
 ---
 
-### `friend` and Access Control → Module Visibility
+### `friend` 和访问控制 → 模块可见性
 
-C++ uses `friend` to grant specific classes or functions access to private members.
-Rust has no `friend` keyword — instead, **privacy is module-scoped**:
+C++ 使用 `friend` 授予特定类或函数访问私有成员的权限。Rust 没有 `friend` 关键字 —— **可见性是模块作用域的**：
 
 ```cpp
 // C++
 class Engine {
-    friend class Car;   // Car can access private members
+    friend class Car;   // Car 可以访问私有成员
     int rpm_;
     void set_rpm(int r) { rpm_ = r; }
 public:
@@ -282,10 +275,10 @@ public:
 ```
 
 ```rust
-// Rust — items in the same module can access all fields, no `friend` needed
+// Rust —— 同一模块内的项可以访问所有字段，无需 `friend`
 mod vehicle {
     pub struct Engine {
-        rpm: u32,  // Private to the module (not to the struct!)
+        rpm: u32,  // 对模块私有（不是对结构体私有！）
     }
 
     impl Engine {
@@ -300,10 +293,10 @@ mod vehicle {
     impl Car {
         pub fn new() -> Self { Car { engine: Engine::new() } }
         pub fn accelerate(&mut self) {
-            self.engine.rpm = 3000; // ✅ Same module — direct field access
+            self.engine.rpm = 3000; // ✅ 同一模块 —— 直接字段访问
         }
         pub fn rpm(&self) -> u32 {
-            self.engine.rpm  // ✅ Same module — can read private field
+            self.engine.rpm  // ✅ 同一模块 —— 可以读取私有字段
         }
     }
 }
@@ -311,127 +304,122 @@ mod vehicle {
 fn main() {
     let mut car = vehicle::Car::new();
     car.accelerate();
-    // car.engine.rpm = 9000;  // ❌ Compile error: `engine` is private
-    println!("RPM: {}", car.rpm()); // ✅ Public method on Car
+    // car.engine.rpm = 9000;  // ❌ 编译错误：`engine` 是私有的
+    println!("RPM: {}", car.rpm()); // ✅ Car 上的公共方法
 }
 ```
 
-| C++ Access | Rust Equivalent | Scope |
+| C++ 访问 | Rust 等价物 | 作用域 |
 |-----------|----------------|-------|
-| `private` | (default, no keyword) | Accessible within the same module only |
-| `protected` | No direct equivalent | Use `pub(super)` for parent module access |
-| `public` | `pub` | Accessible everywhere |
-| `friend class Foo` | Put `Foo` in the same module | Module-level privacy replaces friend |
-| — | `pub(crate)` | Visible within the crate but not to external dependents |
-| — | `pub(super)` | Visible to the parent module only |
-| — | `pub(in crate::path)` | Visible within a specific module subtree |
+| `private` | （默认，无关键字） | 仅在同一模块内可访问 |
+| `protected` | 无直接等价物 | 使用 `pub(super)` 访问父模块 |
+| `public` | `pub` | 到处可访问 |
+| `friend class Foo` | 将 `Foo` 放在同一模块 | 模块级可见性替换 friend |
+| — | `pub(crate)` | crate 内可见但对外部依赖不可见 |
+| — | `pub(super)` | 仅对父模块可见 |
+| — | `pub(in crate::path)` | 在特定模块子树内可见 |
 
-> **Key insight**: C++ privacy is per-class. Rust privacy is per-module.
-> This means you control access by choosing which types live in the same module —
-> colocated types have full access to each other's private fields.
+> **关键洞察**：C++ 可见性是每类的。Rust 可见性是每模块的。这意味着你通过选择哪些类型生活在同一模块中来控制访问 —— 同位置的类型可以完全访问彼此的私有字段。
 
 ---
 
-### `volatile` → Atomics and `read_volatile`/`write_volatile`
+### `volatile` → 原子操作和 `read_volatile`/`write_volatile`
 
-In C++, `volatile` tells the compiler not to optimize away reads/writes — typically
-used for memory-mapped hardware registers. **Rust has no `volatile` keyword.**
+在 C++ 中，`volatile` 告诉编译器不要优化掉读/写 —— 通常用于内存映射硬件寄存器。**Rust 没有 `volatile` 关键字。**
 
 ```cpp
-// C++: volatile for hardware registers
+// C++: 硬件寄存器用 volatile
 volatile uint32_t* const GPIO_REG = reinterpret_cast<volatile uint32_t*>(0x4002'0000);
-*GPIO_REG = 0x01;              // Write not optimized away
-uint32_t val = *GPIO_REG;     // Read not optimized away
+*GPIO_REG = 0x01;              // 写入不被优化掉
+uint32_t val = *GPIO_REG;     // 读取不被优化掉
 ```
 
 ```rust
-// Rust: explicit volatile operations — only in unsafe code
+// Rust: 显式 volatile 操作 —— 仅在 unsafe 代码中
 use std::ptr;
 
 const GPIO_REG: *mut u32 = 0x4002_0000 as *mut u32;
 
-// SAFETY: GPIO_REG is a valid memory-mapped I/O address.
+// 安全：GPIO_REG 是有效的内存映射 I/O 地址。
 unsafe {
-    ptr::write_volatile(GPIO_REG, 0x01);   // Write not optimized away
-    let val = ptr::read_volatile(GPIO_REG); // Read not optimized away
+    ptr::write_volatile(GPIO_REG, 0x01);   // 写入不被优化掉
+    let val = ptr::read_volatile(GPIO_REG); // 读取不被优化掉
 }
 ```
 
-For **concurrent shared state** (the other common C++ `volatile` use), Rust uses atomics:
+对于**并发共享状态**（另一个常见的 C++ `volatile` 用例），Rust 使用原子操作：
 
 ```cpp
-// C++: volatile is NOT sufficient for thread safety (common mistake!)
-volatile bool stop_flag = false;  // ❌ Data race — UB in C++11+
+// C++: volatile 不足以用于线程安全（常见错误！）
+volatile bool stop_flag = false;  // ❌ 数据竞争 —— C++11+ 中的 UB
 
-// Correct C++:
+// 正确的 C++:
 std::atomic<bool> stop_flag{false};
 ```
 
 ```rust
-// Rust: atomics are the only way to share mutable state across threads
+// Rust: 原子操作是跨线程共享可变状态的唯一方式
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 
-// From another thread:
+// 从另一个线程：
 STOP_FLAG.store(true, Ordering::Release);
 
-// Check:
+// 检查：
 if STOP_FLAG.load(Ordering::Acquire) {
     println!("Stopping");
 }
 ```
 
-| C++ Usage | Rust Equivalent | Notes |
+| C++ 用例 | Rust 等价物 | 注释 |
 |-----------|----------------|-------|
-| `volatile` for hardware registers | `ptr::read_volatile` / `ptr::write_volatile` | Requires `unsafe` — correct for MMIO |
-| `volatile` for thread signaling | `AtomicBool` / `AtomicU32` etc. | C++ `volatile` is wrong for this too! |
-| `std::atomic<T>` | `std::sync::atomic::AtomicT` | Same semantics, same orderings |
-| `std::atomic<T>::load(memory_order_acquire)` | `AtomicT::load(Ordering::Acquire)` | 1:1 mapping |
+| `volatile` 用于硬件寄存器 | `ptr::read_volatile` / `ptr::write_volatile` | 需要 `unsafe` —— 适合 MMIO |
+| `volatile` 用于线程信号 | `AtomicBool` / `AtomicU32` 等 | C++ `volatile` 对此也是错误的！ |
+| `std::atomic<T>` | `std::sync::atomic::AtomicT` | 相同语义、相同的顺序 |
+| `std::atomic<T>::load(memory_order_acquire)` | `AtomicT::load(Ordering::Acquire)` | 1:1 映射 |
 
 ---
 
-### `static` Variables → `static`, `const`, `LazyLock`, `OnceLock`
+### `static` 变量 → `static`、`const`、`LazyLock`、`OnceLock`
 
-#### Basic `static` and `const`
+#### 基础 `static` 和 `const`
 
 ```cpp
 // C++
-const int MAX_RETRIES = 5;                    // Compile-time constant
-static std::string CONFIG_PATH = "/etc/app";  // Static init — order undefined!
+const int MAX_RETRIES = 5;                    // 编译时常量
+static std::string CONFIG_PATH = "/etc/app";  // 静态初始化 —— 顺序未定义！
 ```
 
 ```rust
 // Rust
-const MAX_RETRIES: u32 = 5;                   // Compile-time constant, inlined
-static CONFIG_PATH: &str = "/etc/app";         // 'static lifetime, fixed address
+const MAX_RETRIES: u32 = 5;                   // 编译时常量，内联
+static CONFIG_PATH: &str = "/etc/app";         // 'static 生命周期，固定地址
 ```
 
-#### The static initialization order fiasco
+#### 静态初始化顺序陷阱
 
-C++ has a well-known problem: global constructors in different translation units
-execute in **unspecified order**. Rust avoids this entirely — `static` values must
-be compile-time constants (no constructors).
+C++ 有一个众所周知的问题：不同翻译单元中的全局构造函数按**未指定顺序**执行。Rust 完全避免了这个问题 —— `static` 值必须是编译时常量（无构造函数）。
 
-For runtime-initialized globals, use `LazyLock` (Rust 1.80+) or `OnceLock`:
+对于运行时初始化的全局变量，使用 `LazyLock`（Rust 1.80+）或 `OnceLock`：
 
 ```rust
 use std::sync::LazyLock;
 
-// Equivalent to C++ `static std::regex` — initialized on first access, thread-safe
+// 等价于 C++ `static std::regex` —— 首次访问时初始化，线程安全
 static CONFIG_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"^[a-z]+_diag$").expect("invalid regex")
 });
 
 fn is_valid_diag(name: &str) -> bool {
-    CONFIG_REGEX.is_match(name)  // First call initializes; subsequent calls are fast
+    CONFIG_REGEX.is_match(name)  // 首次调用初始化；后续调用快速
 }
 ```
 
 ```rust
 use std::sync::OnceLock;
 
-// OnceLock: initialized once, can be set from runtime data
+// OnceLock: 初始化一次，可以从运行时数据设置
 static DB_CONN: OnceLock<String> = OnceLock::new();
 
 fn init_db(connection_string: &str) {
@@ -444,28 +432,27 @@ fn get_db() -> &'static str {
 }
 ```
 
-| C++ | Rust | Notes |
+| C++ | Rust | 注释 |
 |-----|------|-------|
-| `const int X = 5;` | `const X: i32 = 5;` | Both compile-time. Rust requires type annotation |
-| `constexpr int X = 5;` | `const X: i32 = 5;` | Rust `const` is always constexpr |
-| `static int count = 0;` (file scope) | `static COUNT: AtomicI32 = AtomicI32::new(0);` | Mutable statics require `unsafe` or atomics |
-| `static std::string s = "hi";` | `static S: &str = "hi";` or `LazyLock<String>` | No runtime constructor for simple cases |
-| `static MyObj obj;` (complex init) | `static OBJ: LazyLock<MyObj> = LazyLock::new(\|\| { ... });` | Thread-safe, lazy, no init order issues |
-| `thread_local` | `thread_local! { static X: Cell<u32> = Cell::new(0); }` | Same semantics |
+| `const int X = 5;` | `const X: i32 = 5;` | 两者都是编译时。Rust 需要类型注解 |
+| `constexpr int X = 5;` | `const X: i32 = 5;` | Rust `const` 总是 constexpr |
+| `static int count = 0;` (文件作用域) | `static COUNT: AtomicI32 = AtomicI32::new(0);` | 可变 static 需要 `unsafe` 或原子操作 |
+| `static std::string s = "hi";` | `static S: &str = "hi";` 或 `LazyLock<String>` | 简单情况无运行时构造函数 |
+| `static MyObj obj;` (复杂初始化) | `static OBJ: LazyLock<MyObj> = LazyLock::new(\|\| { ... });` | 线程安全、惰性、无初始化顺序问题 |
+| `thread_local` | `thread_local! { static X: Cell<u32> = Cell::new(0); }` | 相同语义 |
 
 ---
 
 ### `constexpr` → `const fn`
 
-C++ `constexpr` marks functions and variables for compile-time evaluation. Rust
-uses `const fn` and `const` for the same purpose:
+C++ `constexpr` 标记函数和变量用于编译时计算。Rust 使用 `const fn` 和 `const` 用于相同目的：
 
 ```cpp
 // C++
 constexpr int factorial(int n) {
     return n <= 1 ? 1 : n * factorial(n - 1);
 }
-constexpr int val = factorial(5);  // Computed at compile time → 120
+constexpr int val = factorial(5);  // 编译时计算 → 120
 ```
 
 ```rust
@@ -473,37 +460,35 @@ constexpr int val = factorial(5);  // Computed at compile time → 120
 const fn factorial(n: u32) -> u32 {
     if n <= 1 { 1 } else { n * factorial(n - 1) }
 }
-const VAL: u32 = factorial(5);  // Computed at compile time → 120
+const VAL: u32 = factorial(5);  // 编译时计算 → 120
 
-// Also works in array sizes and match patterns:
+// 也适用于数组大小和 match 模式：
 const LOOKUP: [u32; 5] = [factorial(1), factorial(2), factorial(3),
                            factorial(4), factorial(5)];
 ```
 
-| C++ | Rust | Notes |
+| C++ | Rust | 注释 |
 |-----|------|-------|
-| `constexpr int f()` | `const fn f() -> i32` | Same intent — compile-time evaluable |
-| `constexpr` variable | `const` variable | Rust `const` is always compile-time |
-| `consteval` (C++20) | No equivalent | `const fn` can also run at runtime |
-| `if constexpr` (C++17) | No equivalent (use `cfg!` or generics) | Trait specialization fills some use cases |
-| `constinit` (C++20) | `static` with const initializer | Rust `static` must be const-initialized by default |
+| `constexpr int f()` | `const fn f() -> i32` | 相同意图 —— 编译时可计算 |
+| `constexpr` 变量 | `const` 变量 | Rust `const` 总是编译时 |
+| `consteval` (C++20) | 无等价物 | `const fn` 也可以在运行时运行 |
+| `if constexpr` (C++17) | 无等价物（使用 `cfg!` 或泛型） | trait 特化填充某些用例 |
+| `constinit` (C++20) | 带常量初始化器的 `static` | Rust `static` 默认必须是常量初始化的 |
 
-> **Current limitations of `const fn`** (stabilized as of Rust 1.82):
-> - No trait methods (can't call `.len()` on a `Vec` in const context)
-> - No heap allocation (`Box::new`, `Vec::new` not const)
-> - ~~No floating-point arithmetic~~ — **stabilized in Rust 1.82**
-> - Can't use `for` loops (use recursion or `while` with manual index)
+> **`const fn` 的当前限制**（Rust 1.82 已稳定）：
+> - 无 trait 方法（不能在 const 上下文中调用 `Vec` 的 `.len()`）
+> - 无堆分配（`Box::new`、`Vec::new` 不是 const）
+> - ~~无浮点算术~~ —— **Rust 1.82 已稳定**
+> - 不能使用 `for` 循环（使用递归或带手动索引的 `while`）
 
 ---
 
-### SFINAE and `enable_if` → Trait Bounds and `where` Clauses
+### SFINAE 和 `enable_if` → Trait 约束和 `where` 子句
 
-In C++, SFINAE (Substitution Failure Is Not An Error) is the mechanism behind
-conditional generic programming. It is powerful but notoriously unreadable. Rust
-replaces it entirely with **trait bounds**:
+在 C++ 中，SFINAE（替换失败不是错误）是条件泛型编程背后的机制。它功能强大但以难以阅读而闻名。Rust 完全用**trait 约束**替换它：
 
 ```cpp
-// C++: SFINAE-based conditional function (pre-C++20)
+// C++: 基于 SFINAE 的条件函数（C++20 之前）
 template<typename T,
          std::enable_if_t<std::is_integral_v<T>, int> = 0>
 T double_it(T val) { return val * 2; }
@@ -512,20 +497,20 @@ template<typename T,
          std::enable_if_t<std::is_floating_point_v<T>, int> = 0>
 T double_it(T val) { return val * 2.0; }
 
-// C++20 concepts — cleaner but still verbose:
+// C++20 concepts —— 更清晰但仍然冗长：
 template<std::integral T>
 T double_it(T val) { return val * 2; }
 ```
 
 ```rust
-// Rust: trait bounds — readable, composable, excellent error messages
+// Rust: trait 约束 —— 可读、可组合、出色的错误消息
 use std::ops::Mul;
 
 fn double_it<T: Mul<Output = T> + From<u8>>(val: T) -> T {
     val * T::from(2)
 }
 
-// Or with where clause for complex bounds:
+// 或带 where 子句的复杂约束：
 fn process<T>(val: T) -> String
 where
     T: std::fmt::Display + Clone + Send,
@@ -533,7 +518,7 @@ where
     format!("Processing: {}", val)
 }
 
-// Conditional behavior via separate impls (replaces SFINAE overloads):
+// 通过独立的 impl 的条件行为（替换 SFINAE 重载）：
 trait Describable {
     fn describe(&self) -> String;
 }
@@ -547,30 +532,26 @@ impl Describable for f64 {
 }
 ```
 
-| C++ Template Metaprogramming | Rust Equivalent | Readability |
+| C++ 模板元编程 | Rust 等价物 | 可读性 |
 |-----------------------------|----------------|-------------|
-| `std::enable_if_t<cond>` | `where T: Trait` | 🟢 Clear English |
-| `std::is_integral_v<T>` | Bound on a numeric trait or specific types | 🟢 No `_v` / `_t` suffixes |
-| SFINAE overload sets | Separate `impl Trait for ConcreteType` blocks | 🟢 Each impl stands alone |
-| `if constexpr (std::is_same_v<T, int>)` | Specialization via trait impls | 🟢 Compile-time dispatched |
-| C++20 `concept` | `trait` | 🟢 Nearly identical intent |
-| `requires` clause | `where` clause | 🟢 Same position, similar syntax |
-| Compilation fails deep inside template | Compilation fails at the call site with trait mismatch | 🟢 No 200-line error cascades |
+| `std::enable_if_t<cond>` | `where T: Trait` | 🟢 清晰的英语 |
+| `std::is_integral_v<T>` | 数值 trait 或特定类型的约束 | 🟢 无 `_v` / `_t` 后缀 |
+| SFINAE 重载集 | 独立的 `impl Trait for ConcreteType` 块 | 🟢 每个 impl 独立 |
+| `if constexpr (std::is_same_v<T, int>)` | 通过 trait impl 特化 | 🟢 编译时分发 |
+| C++20 `concept` | `trait` | 🟢 几乎相同的意图 |
+| `requires` 子句 | `where` 子句 | 🟢 相同位置、相似语法 |
+| 编译失败深入模板内部 | 编译失败在调用点带 trait 不匹配 | 🟢 无 200 行错误级联 |
 
-> **Key insight**: C++ concepts (C++20) are the closest thing to Rust traits.
-> If you're familiar with C++20 concepts, think of Rust traits as concepts
-> that have been a first-class language feature since 1.0, with a coherent
-> implementation model (trait impls) instead of duck typing.
+> **关键洞察**：C++ concepts（C++20）是最接近 Rust traits 的。如果你熟悉 C++20 concepts，将 Rust traits 视为 concepts 自 1.0 以来就是一流语言特性，带有一致的实现模型（trait impl）而不是 duck typing。
 
 ---
 
-### `std::function` → Function Pointers, `impl Fn`, and `Box<dyn Fn>`
+### `std::function` → 函数指针、`impl Fn` 和 `Box<dyn Fn>`
 
-C++ `std::function<R(Args...)>` is a type-erased callable. Rust has three options,
-each with different trade-offs:
+C++ `std::function<R(Args...)>` 是类型擦除的可调用对象。Rust 有三个选项，每个都有不同的权衡：
 
 ```cpp
-// C++: one-size-fits-all (heap-allocated, type-erased)
+// C++: 万能（堆分配，类型擦除）
 #include <functional>
 std::function<int(int)> make_adder(int n) {
     return [n](int x) { return x + n; };
@@ -578,24 +559,24 @@ std::function<int(int)> make_adder(int n) {
 ```
 
 ```rust
-// Rust Option 1: fn pointer — simple, no captures, no allocation
+// Rust 选项 1: fn 指针 —— 简单、无捕获、无分配
 fn add_one(x: i32) -> i32 { x + 1 }
 let f: fn(i32) -> i32 = add_one;
 println!("{}", f(5)); // 6
 
-// Rust Option 2: impl Fn — monomorphized, zero overhead, can capture
+// Rust 选项 2: impl Fn —— 单态化、零开销、可以捕获
 fn apply(val: i32, f: impl Fn(i32) -> i32) -> i32 { f(val) }
 let n = 10;
-let result = apply(5, |x| x + n);  // Closure captures `n`
+let result = apply(5, |x| x + n);  // 闭包捕获 `n`
 
-// Rust Option 3: Box<dyn Fn> — type-erased, heap-allocated (like std::function)
+// Rust 选项 3: Box<dyn Fn> —— 类型擦除、堆分配（类似 std::function）
 fn make_adder(n: i32) -> Box<dyn Fn(i32) -> i32> {
     Box::new(move |x| x + n)
 }
 let adder = make_adder(10);
 println!("{}", adder(5));  // 15
 
-// Storing heterogeneous callables (like vector<function<int(int)>>):
+// 存储异质可调用对象（类似 vector<function<int(int)>>）：
 let callbacks: Vec<Box<dyn Fn(i32) -> i32>> = vec![
     Box::new(|x| x + 1),
     Box::new(|x| x * 2),
@@ -606,86 +587,83 @@ for cb in &callbacks {
 }
 ```
 
-| When to use | C++ Equivalent | Rust Choice |
+| 何时使用 | C++ 等价物 | Rust 选择 |
 |------------|---------------|-------------|
-| Top-level function, no captures | Function pointer | `fn(Args) -> Ret` |
-| Generic function accepting callables | Template parameter | `impl Fn(Args) -> Ret` (static dispatch) |
-| Trait bound in generics | `template<typename F>` | `F: Fn(Args) -> Ret` |
-| Stored callable, type-erased | `std::function<R(Args)>` | `Box<dyn Fn(Args) -> Ret>` |
-| Callback that mutates state | `std::function` with mutable lambda | `Box<dyn FnMut(Args) -> Ret>` |
-| One-shot callback (consumed) | `std::function` (moved) | `Box<dyn FnOnce(Args) -> Ret>` |
+| 顶层函数、无捕获 | 函数指针 | `fn(Args) -> Ret` |
+| 接受可调用对象的泛型函数 | 模板参数 | `impl Fn(Args) -> Ret`（静态分发） |
+| 泛型中的 trait 约束 | `template<typename F>` | `F: Fn(Args) -> Ret` |
+| 存储的可调用对象，类型擦除 | `std::function<R(Args)>` | `Box<dyn Fn(Args) -> Ret>` |
+| 可变状态的回调 | 带可变 lambda 的 `std::function` | `Box<dyn FnMut(Args) -> Ret>` |
+| 一次性回调（消耗） | （移动）`std::function` | `Box<dyn FnOnce(Args) -> Ret>` |
 
-> **Performance note**: `impl Fn` has zero overhead (monomorphized, like a C++ template).
-> `Box<dyn Fn>` has the same overhead as `std::function` (vtable + heap allocation).
-> Prefer `impl Fn` unless you need to store heterogeneous callables.
+> **性能注意**：`impl Fn` 零开销（单态化，类似 C++ 模板）。`Box<dyn Fn>` 与 `std::function` 有相同的开销（vtable + 堆分配）。优先使用 `impl Fn`，除非你需要存储异质可调用对象。
 
 ---
 
-### Container Mapping: C++ STL → Rust `std::collections`
+### 容器映射：C++ STL → Rust `std::collections`
 
-| C++ STL Container | Rust Equivalent | Notes |
+| C++ STL 容器 | Rust 等价物 | 注释 |
 |------------------|----------------|-------|
-| `std::vector<T>` | `Vec<T>` | Nearly identical API. Rust checks bounds by default |
-| `std::array<T, N>` | `[T; N]` | Stack-allocated fixed-size array |
-| `std::deque<T>` | `std::collections::VecDeque<T>` | Ring buffer. Efficient push/pop at both ends |
-| `std::list<T>` | `std::collections::LinkedList<T>` | Rarely used in Rust — `Vec` is almost always faster |
-| `std::forward_list<T>` | No equivalent | Use `Vec` or `VecDeque` |
-| `std::unordered_map<K, V>` | `std::collections::HashMap<K, V>` | Uses `SipHash` by default (DoS-resistant) |
-| `std::map<K, V>` | `std::collections::BTreeMap<K, V>` | B-tree; keys sorted; `K: Ord` required |
-| `std::unordered_set<T>` | `std::collections::HashSet<T>` | `T: Hash + Eq` required |
-| `std::set<T>` | `std::collections::BTreeSet<T>` | Sorted set; `T: Ord` required |
-| `std::priority_queue<T>` | `std::collections::BinaryHeap<T>` | Max-heap by default (same as C++) |
-| `std::stack<T>` | `Vec<T>` with `.push()` / `.pop()` | No separate stack type needed |
-| `std::queue<T>` | `VecDeque<T>` with `.push_back()` / `.pop_front()` | No separate queue type needed |
-| `std::string` | `String` | UTF-8 guaranteed, not null-terminated |
-| `std::string_view` | `&str` | Borrowed UTF-8 slice |
-| `std::span<T>` (C++20) | `&[T]` / `&mut [T]` | Rust slices have been a first-class type since 1.0 |
-| `std::tuple<A, B, C>` | `(A, B, C)` | First-class syntax, destructurable |
-| `std::pair<A, B>` | `(A, B)` | Just a 2-element tuple |
-| `std::bitset<N>` | No std equivalent | Use the `bitvec` crate or `[u8; N/8]` |
+| `std::vector<T>` | `Vec<T>` | 几乎相同的 API。Rust 默认检查边界 |
+| `std::array<T, N>` | `[T; N]` | 栈分配固定大小数组 |
+| `std::deque<T>` | `std::collections::VecDeque<T>` | 环形缓冲区。两端高效 push/pop |
+| `std::list<T>` | `std::collections::LinkedList<T>` | Rust 中很少使用 —— `Vec` 几乎总是更快 |
+| `std::forward_list<T>` | 无等价物 | 使用 `Vec` 或 `VecDeque` |
+| `std::unordered_map<K, V>` | `std::collections::HashMap<K, V>` | 默认使用 `SipHash`（DoS 抵抗） |
+| `std::map<K, V>` | `std::collections::BTreeMap<K, V>` | B 树；键已排序；需要 `K: Ord` |
+| `std::unordered_set<T>` | `std::collections::HashSet<T>` | 需要 `T: Hash + Eq` |
+| `std::set<T>` | `std::collections::BTreeSet<T>` | 排序集合；需要 `T: Ord` |
+| `std::priority_queue<T>` | `std::collections::BinaryHeap<T>` | 默认最大堆（与 C++ 相同） |
+| `std::stack<T>` | 带 `.push()` / `.pop()` 的 `Vec<T>` | 无需独立的栈类型 |
+| `std::queue<T>` | 带 `.push_back()` / `.pop_front()` 的 `VecDeque<T>` | 无需独立的队列类型 |
+| `std::string` | `String` | 保证 UTF-8，非 null 终止 |
+| `std::string_view` | `&str` | 借用的 UTF-8 切片 |
+| `std::span<T>` (C++20) | `&[T]` / `&mut [T]` | Rust 切片自 1.0 以来就是一等类型 |
+| `std::tuple<A, B, C>` | `(A, B, C)` | 一等语法，可解构 |
+| `std::pair<A, B>` | `(A, B)` | 只是二元组 |
+| `std::bitset<N>` | 无标准库等价物 | 使用 `bitvec` crate 或 `[u8; N/8]` |
 
-**Key differences**:
-- Rust's `HashMap`/`HashSet` require `K: Hash + Eq` — the compiler enforces this at the type level, unlike C++ where using an unhashable key gives a template error deep in the STL
-- `Vec` indexing (`v[i]`) panics on out-of-bounds by default. Use `.get(i)` for `Option<&T>` or iterators to avoid bounds checks entirely
-- No `std::multimap` or `std::multiset` — use `HashMap<K, Vec<V>>` or `BTreeMap<K, Vec<V>>`
+**关键区别**：
+- Rust 的 `HashMap`/`HashSet` 需要 `K: Hash + Eq` —— 编译器在类型级别强制执行此要求，与 C++ 不同，在 C++ 中使用不可哈希的键会在 STL 深处给出模板错误
+- `Vec` 索引（`v[i]`）默认在越界时 panic。使用 `.get(i)` 获取 `Option<&T>` 或迭代器完全避免边界检查
+- 无 `std::multimap` 或 `std::multiset` —— 使用 `HashMap<K, Vec<V>>` 或 `BTreeMap<K, Vec<V>>`
 
 ---
 
-### Exception Safety → Panic Safety
+### 异常安全 → Panic 安全
 
-C++ defines three levels of exception safety (Abrahams guarantees):
+C++ 定义了三个级别的异常安全（Abrahams 保证）：
 
-| C++ Level | Meaning | Rust Equivalent |
+| C++ 级别 | 含义 | Rust 等价物 |
 |----------|---------|----------------|
-| **No-throw** | Function never throws | Function never panics (returns `Result`) |
-| **Strong** (commit-or-rollback) | If it throws, state is unchanged | Ownership model makes this natural — if `?` returns early, partially built values are dropped |
-| **Basic** | If it throws, invariants are preserved | Rust's default — `Drop` runs, no leaks |
+| **No-throw** | 函数从不抛出 | 函数从不 panic（返回 `Result`） |
+| **Strong**（提交或回滚） | 如果抛出，状态不变 | 所有权模型使其自然 —— 如果 `?` 提前返回，部分构建的值被 drop |
+| **Basic** | 如果抛出，不变量保持 | Rust 的默认 —— `Drop` 运行，无泄漏 |
 
-#### How Rust's ownership model helps
+#### Rust 所有权模型如何帮助
 
 ```rust
-// Strong guarantee for free — if file.write() fails, config is unchanged
+// 免费提供强保证 —— 如果 file.write() 失败，config 不变
 fn update_config(config: &mut Config, path: &str) -> Result<(), Error> {
-    let new_data = fetch_from_network()?; // Err → early return, config untouched
-    let validated = validate(new_data)?;   // Err → early return, config untouched
-    *config = validated;                   // Only reached on success (commit)
+    let new_data = fetch_from_network()?; // Err → 提前返回，config 未触及
+    let validated = validate(new_data)?;   // Err → 提前返回，config 未触及
+    *config = validated;                   // 仅在成功时到达（提交）
     Ok(())
 }
 ```
 
-In C++, achieving the strong guarantee requires manual rollback or the copy-and-swap
-idiom. In Rust, `?` propagation gives you the strong guarantee by default for most code.
+在 C++ 中，实现强保证需要手动回滚或复制 - 交换习语。在 Rust 中，`?` 传播为大多数代码默认提供强保证。
 
-#### `catch_unwind` — Rust's equivalent of `catch(...)`
+#### `catch_unwind` —— Rust 的 `catch(...)` 等价物
 
 ```rust
 use std::panic;
 
-// Catch a panic (like catch(...) in C++) — rarely needed
+// 捕获 panic（类似 C++ 中的 catch(...)）—— 很少需要
 let result = panic::catch_unwind(|| {
-    // Code that might panic
+    // 可能 panic 的代码
     let v = vec![1, 2, 3];
-    v[10]  // Panics! (index out of bounds)
+    v[10]  // Panic！（索引越界）
 });
 
 match result {
@@ -694,18 +672,17 @@ match result {
 }
 ```
 
-#### `UnwindSafe` — marking types as panic-safe
+#### `UnwindSafe` —— 标记类型 panic 安全
 
 ```rust
 use std::panic::UnwindSafe;
 
-// Types behind &mut are NOT UnwindSafe by default — the panic may have
-// left them in a partially-modified state
+// &mut 背后的类型默认 NOT UnwindSafe —— panic 可能使它们处于部分修改状态
 fn safe_execute<F: FnOnce() + UnwindSafe>(f: F) {
     let _ = std::panic::catch_unwind(f);
 }
 
-// Use AssertUnwindSafe to override when you've audited the code:
+// 使用 AssertUnwindSafe 覆盖当你审核代码后：
 use std::panic::AssertUnwindSafe;
 let mut data = vec![1, 2, 3];
 let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -713,53 +690,46 @@ let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
 }));
 ```
 
-| C++ Exception Pattern | Rust Equivalent |
+| C++ 异常模式 | Rust 等价物 |
 |-----------------------|-----------------|
-| `throw MyException()` | `return Err(MyError::...)` (preferred) or `panic!("...")` |
-| `try { } catch (const E& e)` | `match result { Ok(v) => ..., Err(e) => ... }` or `?` |
+| `throw MyException()` | `return Err(MyError::...)`（首选）或 `panic!("...")` |
+| `try { } catch (const E& e)` | `match result { Ok(v) => ..., Err(e) => ... }` 或 `?` |
 | `catch (...)` | `std::panic::catch_unwind(...)` |
-| `noexcept` | `-> Result<T, E>` (errors are values, not exceptions) |
-| RAII cleanup in stack unwinding | `Drop::drop()` runs during panic unwinding |
+| `noexcept` | `-> Result<T, E>`（错误是值，不是异常） |
+| 栈展开中的 RAII 清理 | `Drop::drop()` 在 panic 展开期间运行 |
 | `std::uncaught_exceptions()` | `std::thread::panicking()` |
-| `-fno-exceptions` compile flag | `panic = "abort"` in `Cargo.toml` [profile] |
+| `-fno-exceptions` 编译标志 | `Cargo.toml` [profile] 中的 `panic = "abort"` |
 
-> **Bottom line**: In Rust, most code uses `Result<T, E>` instead of exceptions,
-> making error paths explicit and composable. `panic!` is reserved for bugs
-> (like `assert!` failures), not routine errors. This means "exception safety"
-> is largely a non-issue — the ownership system handles cleanup automatically.
+> **底线**：在 Rust 中，大多数代码使用 `Result<T, E>` 而不是异常，使错误路径显式且可组合。`panic!` 预留给 bug（如 `assert!` 失败），不是常规错误。这意味着"异常安全"主要不是问题 —— 所有权系统自动处理清理。
 
 ---
 
-## C++ to Rust Migration Patterns
+## C++ 到 Rust 迁移模式
 
-### Quick Reference: C++ → Rust Idiom Map
+### 快速参考：C++ → Rust 习语映射
 
-| **C++ Pattern** | **Rust Idiom** | **Notes** |
+| **C++ 模式** | **Rust 习语** | **注释** |
 |----------------|---------------|----------|
-| `class Derived : public Base` | `enum Variant { A {...}, B {...} }` | Prefer enums for closed sets |
-| `virtual void method() = 0` | `trait MyTrait { fn method(&self); }` | Use for open/extensible interfaces |
-| `dynamic_cast<Derived*>(ptr)` | `match value { Variant::A(data) => ..., }` | Exhaustive, no runtime failure |
-| `vector<unique_ptr<Base>>` | `Vec<Box<dyn Trait>>` | Only when genuinely polymorphic |
-| `shared_ptr<T>` | `Rc<T>` or `Arc<T>` | Prefer `Box<T>` or owned values first |
-| `enable_shared_from_this<T>` | Arena pattern (`Vec<T>` + indices) | Eliminates reference cycles entirely |
-| `Base* m_pFramework` in every class | `fn execute(&mut self, ctx: &mut Context)` | Pass context, don't store pointers |
-| `try { } catch (...) { }` | `match result { Ok(v) => ..., Err(e) => ... }` | Or use `?` for propagation |
-| `std::optional<T>` | `Option<T>` | `match` required, can't forget None |
-| `const std::string&` parameter | `&str` parameter | Accepts both `String` and `&str` |
-| `enum class Foo { A, B, C }` | `enum Foo { A, B, C }` | Rust enums can also carry data |
-| `auto x = std::move(obj)` | `let x = obj;` | Move is the default, no `std::move` needed |
-| CMake + make + lint | `cargo build / test / clippy / fmt` | One tool for everything |
+| `class Derived : public Base` | `enum Variant { A {...}, B {...} }` | 对封闭集优先使用 enum |
+| `virtual void method() = 0` | `trait MyTrait { fn method(&self); }` | 对开放/可扩展接口使用 |
+| `dynamic_cast<Derived*>(ptr)` | `match value { Variant::A(data) => ..., }` | 穷尽、无运行时失败 |
+| `vector<unique_ptr<Base>>` | `Vec<Box<dyn Trait>>` | 仅当真正多态时 |
+| `shared_ptr<T>` | `Rc<T>` 或 `Arc<T>` | 优先使用 `Box<T>` 或自有值 |
+| `enable_shared_from_this<T>` | Arena 模式（`Vec<T>` + 索引） | 完全消除引用循环 |
+| 每个类中的 `Base* m_pFramework` | `fn execute(&mut self, ctx: &mut Context)` | 传递上下文，不要存储指针 |
+| `try { } catch (...) { }` | `match result { Ok(v) => ..., Err(e) => ... }` | 或使用 `?` 进行传播 |
+| `std::optional<T>` | `Option<T>` | 需要 `match`，不能忘记 None |
+| `const std::string&` 参数 | `&str` 参数 | 接受 `String` 和 `&str` |
+| `enum class Foo { A, B, C }` | `enum Foo { A, B, C }` | Rust enum 也可以携带数据 |
+| `auto x = std::move(obj)` | `let x = obj;` | Move 是默认，无需 `std::move` |
+| CMake + make + lint | `cargo build / test / clippy / fmt` | 一个工具搞定一切 |
 
-### Migration Strategy
-1. **Start with data types**: Translate structs and enums first — this forces you to think about ownership
-2. **Convert factories to enums**: If a factory creates different derived types, it should probably be `enum` + `match`
-3. **Convert god objects to composed structs**: Group related fields into focused structs
-4. **Replace pointers with borrows**: Convert `Base*` stored pointers to `&'a T` lifetime-bounded borrows
-5. **Use `Box<dyn Trait>` sparingly**: Only for plugin systems and test mocking
-6. **Let the compiler guide you**: Rust's error messages are excellent — read them carefully
+### 迁移策略
+1. **从数据类型开始**：首先翻译结构体和 enum —— 这迫使你思考所有权
+2. **将工厂转换为 enum**：如果工厂创建不同的派生类型，它应该可能是 `enum` + `match`
+3. **将上帝对象转换为组合结构体**：将相关字段分组为专注的结构体
+4. **将指针转换为借用**：将 `Base*` 存储指针转换为 `'a T` 生命周期限制的借用
+5. **谨慎使用 `Box<dyn Trait>`**：仅用于插件系统和测试 mocking
+6. **让编译器指导你**：Rust 的错误消息非常出色 —— 仔细阅读它们
 
-
-
-
-
-
+---

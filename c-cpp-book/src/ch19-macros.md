@@ -1,32 +1,32 @@
-## Rust Macros: From Preprocessor to Metaprogramming
+## Rust 宏：从预处理器到元编程
 
-> **What you'll learn:** How Rust macros work, when to use them instead of functions or generics, and how they replace the C/C++ preprocessor. By the end of this chapter you can write your own `macro_rules!` macros and understand what `#[derive(Debug)]` does under the hood.
+> **你将学到什么：** Rust 宏如何工作、何时使用它们代替函数或泛型，以及它们如何替换 C/C++ 预处理器。在本章结束时，你可以编写自己的 `macro_rules!` 宏并理解 `#[derive(Debug)]` 在底层做什么。
 
-Macros are one of the first things you encounter in Rust (`println!("hello")` on line one) but one of the last things most courses explain. This chapter fixes that.
+宏是你在 Rust 中最早接触的东西之一（第一行的 `println!("hello")`），但也是大多数课程最后解释的东西之一。本章修复这个问题。
 
-### Why Macros Exist
+### 为什么宏存在
 
-Functions and generics handle most code reuse in Rust. Macros fill the gaps where the type system can't reach:
+函数和泛型处理 Rust 中的大多数代码重用。宏填补类型系统无法触及的空白：
 
-| Need | Function/Generic? | Macro? | Why |
+| 需求 | 函数/泛型？ | 宏？ | 为什么 |
 |------|-------------------|--------|-----|
-| Compute a value | ✅ `fn max<T: Ord>(a: T, b: T) -> T` | — | Type system handles it |
-| Accept variable number of arguments | ❌ Rust has no variadic functions | ✅ `println!("{} {}", a, b)` | Macros accept any number of tokens |
-| Generate repetitive `impl` blocks | ❌ No way with generics alone | ✅ `macro_rules!` | Macros generate code at compile time |
-| Run code at compile time | ❌ `const fn` is limited | ✅ Procedural macros | Full Rust code runs at compile time |
-| Conditionally include code | ❌ | ✅ `#[cfg(...)]` | Attribute macros control compilation |
+| 计算值 | ✅ `fn max<T: Ord>(a: T, b: T) -> T` | — | 类型系统处理它 |
+| 接受可变数量参数 | ❌ Rust 没有变参函数 | ✅ `println!("{} {}", a, b)` | 宏接受任意数量的 token |
+| 为多个类型生成重复的 `impl` 块 | ❌ 仅用泛型无法完成 | ✅ `macro_rules!` | 宏在编译时生成代码 |
+| 在编译时运行代码 | ❌ `const fn` 有限制 | ✅ 过程宏 | 完整的 Rust 代码在编译时运行 |
+| 条件包含代码 | ❌ | ✅ `#[cfg(...)]` | 属性宏控制编译 |
 
-If you're coming from C/C++, think of macros as the *only correct replacement for the preprocessor* — except they operate on the syntax tree instead of raw text, so they're hygienic (no accidental name collisions) and type-aware.
+如果你来自 C/C++，将宏视为*预处理器的唯一正确替换* —— 除了它们操作语法树而不是原始文本，所以它们是卫生的（无意外的名称冲突）且类型感知的。
 
-> **For C developers:** Rust macros replace `#define` entirely. There is no textual preprocessor. See [ch18](ch18-cpp-rust-semantic-deep-dives.md) for the full preprocessor → Rust mapping.
+> **对于 C 开发者：** Rust 宏完全替换 `#define`。没有文本预处理器。请参阅 [ch18](ch18-cpp-rust-semantic-deep-dives.md) 获取完整的预处理器 → Rust 映射。
 
 ---
 
-## Declarative Macros with `macro_rules!`
+## 使用 `macro_rules!` 的声明式宏
 
-Declarative macros (also called "macros by example") are Rust's most common macro form. They use pattern matching on syntax, similar to `match` on values.
+声明式宏（也称为"示例宏"）是 Rust 最常见的宏形式。它们使用语法模式匹配，类似于值上的 `match`。
 
-### Basic syntax
+### 基础语法
 
 ```rust
 macro_rules! say_hello {
@@ -36,23 +36,23 @@ macro_rules! say_hello {
 }
 
 fn main() {
-    say_hello!();  // Expands to: println!("Hello!");
+    say_hello!();  // 展开为：println!("Hello!");
 }
 ```
 
-The `!` after the name is what tells you (and the compiler) this is a macro invocation.
+名称后的 `!` 是告诉你（和编译器）这是宏调用的内容。
 
-### Pattern matching with arguments
+### 带参数的模式匹配
 
-Macros match on *token trees* using fragment specifiers:
+宏使用片段说明符在*token 树*上匹配：
 
 ```rust
 macro_rules! greet {
-    // Pattern 1: no arguments
+    // 模式 1：无参数
     () => {
         println!("Hello, world!");
     };
-    // Pattern 2: one expression argument
+    // 模式 2：一个表达式参数
     ($name:expr) => {
         println!("Hello, {}!", $name);
     };
@@ -64,31 +64,31 @@ fn main() {
 }
 ```
 
-#### Fragment specifiers reference
+#### 片段说明符参考
 
-| Specifier | Matches | Example |
+| 说明符 | 匹配 | 示例 |
 |-----------|---------|---------|
-| `$x:expr` | Any expression | `42`, `a + b`, `foo()` |
-| `$x:ty` | A type | `i32`, `Vec<String>`, `&str` |
-| `$x:ident` | An identifier | `foo`, `my_var` |
-| `$x:pat` | A pattern | `Some(x)`, `_`, `(a, b)` |
-| `$x:stmt` | A statement | `let x = 5;` |
-| `$x:block` | A block | `{ println!("hi"); 42 }` |
-| `$x:literal` | A literal | `42`, `"hello"`, `true` |
-| `$x:tt` | A single token tree | Anything — the wildcard |
-| `$x:item` | An item (fn, struct, impl, etc.) | `fn foo() {}` |
+| `$x:expr` | 任何表达式 | `42`、`a + b`、`foo()` |
+| `$x:ty` | 类型 | `i32`、`Vec<String>`、`&str` |
+| `$x:ident` | 标识符 | `foo`、`my_var` |
+| `$x:pat` | 模式 | `Some(x)`、`_`、`(a, b)` |
+| `$x:stmt` | 语句 | `let x = 5;` |
+| `$x:block` | 块 | `{ println!("hi"); 42 }` |
+| `$x:literal` | 字面量 | `42`、`"hello"`、`true` |
+| `$x:tt` | 单个 token 树 | 任何内容 —— 通配符 |
+| `$x:item` | 项（fn、struct、impl 等） | `fn foo() {}` |
 
-### Repetition — the killer feature
+### 重复 —— 杀手级功能
 
-C/C++ macros can't loop. Rust macros can repeat patterns:
+C/C++ 宏不能循环。Rust 宏可以重复模式：
 
 ```rust
 macro_rules! make_vec {
-    // Match zero or more comma-separated expressions
+    // 匹配零个或多个逗号分隔的表达式
     ( $( $element:expr ),* ) => {
         {
             let mut v = Vec::new();
-            $( v.push($element); )*  // Repeat for each matched element
+            $( v.push($element); )*  // 对每个匹配的元素重复
             v
         }
     };
@@ -100,9 +100,9 @@ fn main() {
 }
 ```
 
-The `$( ... ),*` syntax means "match zero or more of this pattern, separated by commas." The `$( ... )*` in the expansion repeats the body once for each match.
+`$( ... ),*` 语法意味着"匹配零个或多个此模式，用逗号分隔。"展开式中的 `$( ... )*` 对每个匹配重复主体一次。
 
-> **This is exactly how `vec![]` is implemented in the standard library.** The actual source is:
+> **这正是 `vec![]` 在标准库中的实现方式。** 实际源代码是：
 > ```rust
 > macro_rules! vec {
 >     () => { Vec::new() };
@@ -110,19 +110,19 @@ The `$( ... ),*` syntax means "match zero or more of this pattern, separated by 
 >     ($($x:expr),+ $(,)?) => { <[_]>::into_vec(Box::new([$($x),+])) };
 > }
 > ```
-> The `$(,)?` at the end allows an optional trailing comma.
+> 末尾的 `$(,)?` 允许尾随逗号。
 
-#### Repetition operators
+#### 重复运算符
 
-| Operator | Meaning | Example |
+| 运算符 | 含义 | 示例 |
 |----------|---------|---------|
-| `$( ... )*` | Zero or more | `vec![]`, `vec![1]`, `vec![1, 2, 3]` |
-| `$( ... )+` | One or more | At least one element required |
-| `$( ... )?` | Zero or one | Optional element |
+| `$( ... )*` | 零个或多个 | `vec![]`、`vec![1]`、`vec![1, 2, 3]` |
+| `$( ... )+` | 一个或多个 | 至少需要一个元素 |
+| `$( ... )?` | 零个或一个 | 可选元素 |
 
-### Practical example: a `hashmap!` constructor
+### 实用示例：`hashmap!` 构造器
 
-The standard library has `vec![]` but no `hashmap!{}`. Let's build one:
+标准库有 `vec![]` 但没有 `hashmap!{}`。让我们构建一个：
 
 ```rust
 macro_rules! hashmap {
@@ -139,15 +139,15 @@ fn main() {
     let scores = hashmap! {
         "Alice" => 95,
         "Bob" => 87,
-        "Carol" => 92,  // trailing comma OK thanks to $(,)?
+        "Carol" => 92,  // 尾随逗号 OK，多亏了 $(,)?
     };
     println!("{scores:?}");
 }
 ```
 
-### Practical example: diagnostic check macro
+### 实用示例：诊断检查宏
 
-A pattern common in embedded/diagnostic code — check a condition and return an error:
+嵌入式/诊断代码中常见的模式 —— 检查条件并返回错误：
 
 ```rust
 use thiserror::Error;
@@ -175,114 +175,114 @@ fn run_diagnostics(temp: f64, voltage: f64) -> Result<(), DiagError> {
 }
 ```
 
-> **C/C++ comparison:**
+> **C/C++ 对比：**
 > ```c
-> // C preprocessor — textual substitution, no type safety, no hygiene
+> // C 预处理器 —— 文本替换，无类型安全，无卫生性
 > #define DIAG_CHECK(cond, msg) \
 >     do { if (!(cond)) { log_error(msg); return -1; } } while(0)
 > ```
-> The Rust version returns a proper `Result` type, has no double-evaluation risk, and the compiler checks that `$cond` is actually a `bool` expression.
+> Rust 版本返回适当的 `Result` 类型，无双倍求值风险，编译器检查 `$cond` 实际上是 `bool` 表达式。
 
-### Hygiene: why Rust macros are safe
+### 卫生性：为什么 Rust 宏是安全的
 
-C/C++ macro bugs often come from name collisions:
+C/C++ 宏 bug 通常来自名称冲突：
 
 ```c
-// C: dangerous — `x` could shadow the caller's `x`
+// C: 危险 —— `x` 可能遮蔽调用者的 `x`
 #define SQUARE(x) ((x) * (x))
 int x = 5;
-int result = SQUARE(x++);  // UB: x incremented twice!
+int result = SQUARE(x++);  // UB: x 被递增两次！
 ```
 
-Rust macros are **hygienic** — variables created inside a macro don't leak out:
+Rust 宏是**卫生的** —— 宏内创建的变量不会泄露：
 
 ```rust
 macro_rules! make_x {
     () => {
-        let x = 42;  // This `x` is scoped to the macro expansion
+        let x = 42;  // 此 `x` 作用域限于宏展开
     };
 }
 
 fn main() {
     let x = 10;
     make_x!();
-    println!("{x}");  // Prints 10, not 42 — hygiene prevents collision
+    println!("{x}");  // 打印 10，不是 42 —— 卫生性防止冲突
 }
 ```
 
-The macro's `x` and the caller's `x` are treated as different variables by the compiler, even though they have the same name. **This is impossible with the C preprocessor.**
+宏的 `x` 和调用者的 `x` 被编译器视为不同的变量，即使它们名称相同。**这在 C 预处理器中是不可能的。**
 
 ---
 
-## Common Standard Library Macros
+## 常见标准库宏
 
-You've been using these since chapter 1 — here's what they actually do:
+你从第 1 章就开始使用这些 —— 这是它们实际做什么：
 
-| Macro | What it does | Expands to (simplified) |
+| 宏 | 它做什么 | 展开为（简化） |
 |-------|-------------|------------------------|
-| `println!("{}", x)` | Format and print to stdout + newline | `std::io::_print(format_args!(...))` |
-| `eprintln!("{}", x)` | Print to stderr + newline | Same but to stderr |
-| `format!("{}", x)` | Format into a `String` | Allocates and returns a `String` |
-| `vec![1, 2, 3]` | Create a `Vec` with elements | `Vec::from([1, 2, 3])` (approximately) |
-| `todo!()` | Mark unfinished code | `panic!("not yet implemented")` |
-| `unimplemented!()` | Mark deliberately unimplemented code | `panic!("not implemented")` |
-| `unreachable!()` | Mark code the compiler can't prove unreachable | `panic!("unreachable")` |
-| `assert!(cond)` | Panic if condition is false | `if !cond { panic!(...) }` |
-| `assert_eq!(a, b)` | Panic if values aren't equal | Shows both values on failure |
-| `dbg!(expr)` | Print expression + value to stderr, return value | `eprintln!("[file:line] expr = {:#?}", &expr); expr` |
-| `include_str!("file.txt")` | Embed file contents as `&str` at compile time | Reads file during compilation |
-| `include_bytes!("data.bin")` | Embed file contents as `&[u8]` at compile time | Reads file during compilation |
-| `cfg!(condition)` | Compile-time condition as a `bool` | `true` or `false` based on target |
-| `env!("VAR")` | Read environment variable at compile time | Fails compilation if not set |
-| `concat!("a", "b")` | Concatenate literals at compile time | `"ab"` |
+| `println!("{}", x)` | 格式化并打印到 stdout + 换行 | `std::io::_print(format_args!(...))` |
+| `eprintln!("{}", x)` | 打印到 stderr + 换行 | 同但到 stderr |
+| `format!("{}", x)` | 格式化为 `String` | 分配并返回 `String` |
+| `vec![1, 2, 3]` | 带元素创建 `Vec` | `Vec::from([1, 2, 3])`（大约） |
+| `todo!()` | 标记未完成代码 | `panic!("not yet implemented")` |
+| `unimplemented!()` | 标记故意未实现的代码 | `panic!("not implemented")` |
+| `unreachable!()` | 标记编译器无法证明不可达的代码 | `panic!("unreachable")` |
+| `assert!(cond)` | 如果条件为 false 则 panic | `if !cond { panic!(...) }` |
+| `assert_eq!(a, b)` | 如果值不相等则 panic | 失败时显示两个值 |
+| `dbg!(expr)` | 打印表达式 + 值到 stderr，返回值 | `eprintln!("[file:line] expr = {:#?}", &expr); expr` |
+| `include_str!("file.txt")` | 编译时将文件内容嵌入为 `&str` | 编译期间读取文件 |
+| `include_bytes!("data.bin")` | 编译时将文件内容嵌入为 `&[u8]` | 编译期间读取文件 |
+| `cfg!(condition)` | 编译时条件作为 `bool` | 基于目标的 `true` 或 `false` |
+| `env!("VAR")` | 编译时读取环境变量 | 如果未设置则编译失败 |
+| `concat!("a", "b")` | 编译时连接字面量 | `"ab"` |
 
-### `dbg!` — the debugging macro you'll use daily
+### `dbg!` —— 你每天使用的调试宏
 
 ```rust
 fn factorial(n: u32) -> u32 {
-    if dbg!(n <= 1) {     // Prints: [src/main.rs:2] n <= 1 = false
-        dbg!(1)           // Prints: [src/main.rs:3] 1 = 1
+    if dbg!(n <= 1) {     // 打印：[src/main.rs:2] n <= 1 = false
+        dbg!(1)           // 打印：[src/main.rs:3] 1 = 1
     } else {
-        dbg!(n * factorial(n - 1))  // Prints intermediate values
+        dbg!(n * factorial(n - 1))  // 打印中间值
     }
 }
 
 fn main() {
-    dbg!(factorial(4));   // Prints all recursive calls with file:line
+    dbg!(factorial(4));   // 打印所有递归调用带 file:line
 }
 ```
 
-`dbg!` returns the value it wraps, so you can insert it anywhere without changing program behavior. It prints to stderr (not stdout), so it doesn't interfere with program output. **Remove all `dbg!` calls before committing code.**
+`dbg!` 返回它包装的值，所以你可以在任何地方插入它而不改变程序行为。它打印到 stderr（不是 stdout），所以不干扰程序输出。**在提交代码前删除所有 `dbg!` 调用。**
 
-### Format string syntax
+### 格式字符串语法
 
-Since `println!`, `format!`, `eprintln!`, and `write!` all use the same format machinery, here's the quick reference:
+由于 `println!`、`format!`、`eprintln!` 和 `write!` 都使用相同的格式机制，这是快速参考：
 
 ```rust
 let name = "sensor";
 let value = 3.14159;
 let count = 42;
 
-println!("{name}");                    // Variable by name (Rust 1.58+)
-println!("{}", name);                  // Positional
-println!("{value:.2}");                // 2 decimal places: "3.14"
-println!("{count:>10}");               // Right-aligned, width 10: "        42"
-println!("{count:0>10}");              // Zero-padded: "0000000042"
-println!("{count:#06x}");              // Hex with prefix: "0x002a"
-println!("{count:#010b}");             // Binary with prefix: "0b00101010"
-println!("{value:?}");                 // Debug format
-println!("{value:#?}");                // Pretty-printed Debug format
+println!("{name}");                    // 按名称变量（Rust 1.58+）
+println!("{}", name);                  // 位置
+println!("{value:.2}");                // 2 位小数："3.14"
+println!("{count:>10}");               // 右对齐，宽度 10："        42"
+println!("{count:0>10}");              // 零填充："0000000042"
+println!("{count:#06x}");              // 带前缀的十六进制："0x002a"
+println!("{count:#010b}");             // 带前缀的二进制："0b00101010"
+println!("{value:?}");                 // Debug 格式
+println!("{value:#?}");                // 美观打印的 Debug 格式
 ```
 
-> **For C developers:** Think of this as a type-safe `printf` — the compiler checks that `{:.2}` is applied to a float, not a string. No `%s`/`%d` format mismatch bugs.
+> **对于 C 开发者：** 将此视为类型安全的 `printf` —— 编译器检查 `{:.2}` 应用于浮点数，不是字符串。无 `%s`/`%d` 格式不匹配 bug。
 >
-> **For C++ developers:** This replaces `std::cout << std::fixed << std::setprecision(2) << value` with a single readable format string.
+> **对于 C++ 开发者：** 这替换 `std::cout << std::fixed << std::setprecision(2) << value` 为单个可读格式字符串。
 
 ---
 
-## Derive Macros
+## Derive 宏
 
-You've seen `#[derive(...)]` on nearly every struct in this book:
+你在这本书的几乎每个结构体上都见过 `#[derive(...)]`：
 
 ```rust
 #[derive(Debug, Clone, PartialEq)]
@@ -292,10 +292,10 @@ struct Point {
 }
 ```
 
-`#[derive(Debug)]` is a **derive macro** — a special kind of procedural macro that generates trait implementations automatically. Here's what it produces (simplified):
+`#[derive(Debug)]` 是 **derive 宏** —— 一种特殊的过程宏，自动生成 trait 实现。这是它产生的内容（简化）：
 
 ```rust
-// What #[derive(Debug)] generates for Point:
+// #[derive(Debug)] 为 Point 生成的：
 impl std::fmt::Debug for Point {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Point")
@@ -306,152 +306,152 @@ impl std::fmt::Debug for Point {
 }
 ```
 
-Without `#[derive(Debug)]`, you'd have to write that `impl` block by hand for every struct.
+没有 `#[derive(Debug)]`，你必须为每个结构体手动编写该 `impl` 块。
 
-### Commonly derived traits
+### 常见的 derive trait
 
-| Derive | What it generates | When to use |
+| Derive | 生成什么 | 何时使用 |
 |--------|-------------------|-------------|
-| `Debug` | `{:?}` formatting | Almost always — enables printing for debugging |
-| `Clone` | `.clone()` method | When you need to duplicate values |
-| `Copy` | Implicit copy on assignment | Small, stack-only types (integers, `[f64; 3]`) |
-| `PartialEq` / `Eq` | `==` and `!=` operators | When you need equality comparison |
-| `PartialOrd` / `Ord` | `<`, `>`, `<=`, `>=` operators | When you need ordering |
-| `Hash` | Hashing for `HashMap`/`HashSet` keys | Types used as map keys |
-| `Default` | `Type::default()` constructor | Types with sensible zero/empty values |
-| `serde::Serialize` / `Deserialize` | JSON/TOML/etc. serialization | Data types that cross API boundaries |
+| `Debug` | `{:?}` 格式化 | 几乎总是 —— 启用调试打印 |
+| `Clone` | `.clone()` 方法 | 当需要复制值时 |
+| `Copy` | 赋值时隐式复制 | 小型、仅栈类型（整数、`[f64; 3]`） |
+| `PartialEq` / `Eq` | `==` 和 `!=` 运算符 | 当需要相等比较时 |
+| `PartialOrd` / `Ord` | `<`、`>`、`<=`、`>=` 运算符 | 当需要排序时 |
+| `Hash` | `HashMap`/`HashSet` 键的哈希 | 用作映射键的类型 |
+| `Default` | `Type::default()` 构造函数 | 带合理零/空值的类型 |
+| `serde::Serialize` / `Deserialize` | JSON/TOML 等序列化 | 跨 API 边界的数据类型 |
 
-### The derive decision tree
+### derive 决策树
 
 ```text
-Should I derive it?
+我应该 derive 吗？
   │
-  ├── Does my type contain only types that implement the trait?
-  │     ├── Yes → #[derive] will work
-  │     └── No  → Write a manual impl (or skip it)
+  ├── 我的类型包含的所有类型都实现了该 trait 吗？
+  │     ├── 是 → #[derive] 有效
+  │     └── 否  → 手动实现（或跳过）
   │
-  └── Will users of my type reasonably expect this behavior?
-        ├── Yes → Derive it (Debug, Clone, PartialEq are almost always reasonable)
-        └── No  → Don't derive (e.g., don't derive Copy for a type with a file handle)
+  └── 我的类型的用户会合理地期望这种行为吗？
+        ├── 是 → derive 它（Debug、Clone、PartialEq 几乎总是合理的）
+        └── 否  → 不要 derive（例如，不要为带文件句柄的类型 derive Copy）
 ```
 
-> **C++ comparison:** `#[derive(Clone)]` is like auto-generating a correct copy constructor. `#[derive(PartialEq)]` is like auto-generating `operator==` that compares each field — something C++20's `= default` spaceship operator finally provides.
+> **C++ 对比：** `#[derive(Clone)]` 类似于自动生成正确的复制构造函数。`#[derive(PartialEq)]` 类似于自动生成 `operator==` 比较每个字段 —— 这是 C++20 的 `= default` spaceship 运算符最终提供的。
 
 ---
 
-## Attribute Macros
+## 属性宏
 
-Attribute macros transform the item they're attached to. You've already used several:
+属性宏转换它们附加的项。你已经使用过几个：
 
 ```rust
-#[test]                    // Marks a function as a test
+#[test]                    // 标记函数为测试
 fn test_addition() {
     assert_eq!(2 + 2, 4);
 }
 
-#[cfg(target_os = "linux")] // Conditionally includes this function
+#[cfg(target_os = "linux")] // 条件包含此函数
 fn linux_only() { /* ... */ }
 
-#[derive(Debug)]            // Generates Debug implementation
+#[derive(Debug)]            // 生成 Debug 实现
 struct MyType { /* ... */ }
 
-#[allow(dead_code)]         // Suppresses a compiler warning
+#[allow(dead_code)]         // 抑制编译器警告
 fn unused_helper() { /* ... */ }
 
-#[must_use]                 // Warn if return value is discarded
+#[must_use]                 // 如果返回值被丢弃则警告
 fn compute_checksum(data: &[u8]) -> u32 { /* ... */ }
 ```
 
-Common built-in attributes:
+常见的内置属性：
 
-| Attribute | Purpose |
+| 属性 | 用途 |
 |-----------|---------|
-| `#[test]` | Mark as test function |
-| `#[cfg(...)]` | Conditional compilation |
-| `#[derive(...)]` | Auto-generate trait impls |
-| `#[allow(...)]` / `#[deny(...)]` / `#[warn(...)]` | Control lint levels |
-| `#[must_use]` | Warn on unused return values |
-| `#[inline]` / `#[inline(always)]` | Hint to inline the function |
-| `#[repr(C)]` | Use C-compatible memory layout (for FFI) |
-| `#[no_mangle]` | Don't mangle the symbol name (for FFI) |
-| `#[deprecated]` | Mark as deprecated with optional message |
+| `#[test]` | 标记为测试函数 |
+| `#[cfg(...)]` | 条件编译 |
+| `#[derive(...)]` | 自动生成 trait 实现 |
+| `#[allow(...)]` / `#[deny(...)]` / `#[warn(...)]` | 控制 lint 级别 |
+| `#[must_use]` | 未使用返回值时警告 |
+| `#[inline]` / `#[inline(always)]` | 内联函数的提示 |
+| `#[repr(C)]` | 使用 C 兼容内存布局（用于 FFI） |
+| `#[no_mangle]` | 不修饰符号名（用于 FFI） |
+| `#[deprecated]` | 标记为已弃用，带可选消息 |
 
-> **For C/C++ developers:** Attributes replace a mix of preprocessor directives (`#pragma`, `__attribute__((...))`), and compiler-specific extensions. They're part of the language grammar, not bolted-on extensions.
+> **对于 C/C++ 开发者：** 属性替换预处理器指令（`#pragma`、`__attribute__((...)`）和编译器特定扩展的混合。它们是语言语法的一部分，不是临时附加的扩展。
 
 ---
 
-## Procedural Macros (Conceptual Overview)
+## 过程宏（概念概述）
 
-Procedural macros ("proc macros") are macros written as *separate Rust programs* that run at compile time and generate code. They're more powerful than `macro_rules!` but also more complex.
+过程宏（"proc 宏"）是作为**独立 Rust 程序**编写的宏，在编译时运行并生成代码。它们比 `macro_rules!` 更强大但也更复杂。
 
-There are three kinds:
+有三种类型：
 
-| Kind | Syntax | Example | What it does |
+| 种类 | 语法 | 示例 | 它做什么 |
 |------|--------|---------|-------------|
-| **Function-like** | `my_macro!(...)` | `sql!(SELECT * FROM users)` | Parses custom syntax, generates Rust code |
-| **Derive** | `#[derive(MyTrait)]` | `#[derive(Serialize)]` | Generates trait impl from struct definition |
-| **Attribute** | `#[my_attr]` | `#[tokio::main]`, `#[instrument]` | Transforms the annotated item |
+| **函数式** | `my_macro!(...)` | `sql!(SELECT * FROM users)` | 解析自定义语法，生成 Rust 代码 |
+| **Derive** | `#[derive(MyTrait)]` | `#[derive(Serialize)]` | 从结构体定义生成 trait 实现 |
+| **属性** | `#[my_attr]` | `#[tokio::main]`、`#[instrument]` | 转换注解的项 |
 
-### You've already used proc macros
+### 你已经使用过 proc 宏
 
-- `#[derive(Error)]` from `thiserror` — generates `Display` and `From` impls for error enums
-- `#[derive(Serialize, Deserialize)]` from `serde` — generates serialization code
-- `#[tokio::main]` — transforms `async fn main()` into a runtime setup + block_on
-- `#[test]` — registered by the test harness (built-in proc macro)
+- `#[derive(Error)]` 来自 `thiserror` —— 为错误 enum 生成 `Display` 和 `From` 实现
+- `#[derive(Serialize, Deserialize)]` 来自 `serde` —— 生成序列化代码
+- `#[tokio::main]` —— 将 `async fn main()` 转换为运行时设置 + block_on
+- `#[test]` —— 由测试工具架注册（内置 proc 宏）
 
-### When to write your own proc macro
+### 何时编写自己的 proc 宏
 
-You likely won't need to write proc macros during this course. They're useful when:
-- You need to inspect struct fields/enum variants at compile time (derive macros)
-- You're building a domain-specific language (function-like macros)
-- You need to transform function signatures (attribute macros)
+在本课程期间你可能不需要编写 proc 宏。它们有用的情况：
+- 需要在编译时检查结构体字段/enum 变体（derive 宏）
+- 正在构建领域特定语言（函数式宏）
+- 需要转换函数签名（属性宏）
 
-For most code, `macro_rules!` or plain functions are sufficient.
+对于大多数代码，`macro_rules!` 或普通函数就足够了。
 
-> **C++ comparison:** Procedural macros fill the role that code generators, template metaprogramming, and external tools like `protoc` fill in C++. The difference is that proc macros are part of the cargo build pipeline — no external build steps, no CMake custom commands.
+> **C++ 对比：** 过程宏填充代码生成器、模板元编程和外部工具（如 `protoc`）在 C++ 中的角色。区别在于 proc 宏是 cargo 构建管道的一部分 —— 无外部构建步骤、无 CMake 自定义命令。
 
 ---
 
-## When to Use What: Macros vs Functions vs Generics
+## 何时使用什么：宏 vs 函数 vs 泛型
 
 ```text
-Need to generate code?
+需要生成代码？
   │
-  ├── No → Use a function or generic function
-  │         (simpler, better error messages, IDE support)
+  ├── 否 → 使用函数或泛型函数
+  │         （更简单、更好的错误消息、IDE 支持）
   │
-  └── Yes ─┬── Variable number of arguments?
-            │     └── Yes → macro_rules! (e.g., println!, vec!)
+  └── 是 ─┬── 可变数量参数？
+            │     └── 是 → macro_rules!（例如 println!、vec!）
             │
-            ├── Repetitive impl blocks for many types?
-            │     └── Yes → macro_rules! with repetition
+            ├── 为多个类型生成重复的 impl 块？
+            │     └── 是 → 带重复的 macro_rules!
             │
-            ├── Need to inspect struct fields?
-            │     └── Yes → Derive macro (proc macro)
+            ├── 需要检查结构体字段？
+            │     └── 是 → Derive 宏（proc 宏）
             │
-            ├── Need custom syntax (DSL)?
-            │     └── Yes → Function-like proc macro
+            ├── 需要自定义语法（DSL）？
+            │     └── 是 → 函数式 proc 宏
             │
-            └── Need to transform a function/struct?
-                  └── Yes → Attribute proc macro
+            └── 需要转换函数/结构体？
+                  └── 是 → 属性 proc 宏
 ```
 
-**General guideline:** If a function or generic can do it, don't use a macro. Macros have worse error messages, no IDE auto-complete inside the macro body, and are harder to debug.
+**一般指南：** 如果函数或泛型可以完成，不要使用宏。宏有更差的错误消息、宏体内无 IDE 自动补全，且更难调试。
 
 ---
 
-## Exercises
+## 练习
 
-### 🟢 Exercise 1: `min!` macro
+### 🟢 练习 1：`min!` 宏
 
-Write a `min!` macro that:
-- `min!(a, b)` returns the smaller of two values
-- `min!(a, b, c)` returns the smallest of three values
-- Works with any type that implements `PartialOrd`
+编写一个 `min!` 宏：
+- `min!(a, b)` 返回两个值中较小的
+- `min!(a, b, c)` 返回三个值中最小的
+- 适用于任何实现 `PartialOrd` 的类型
 
-**Hint:** You'll need two match arms in your `macro_rules!`.
+**提示：** 你的 `macro_rules!` 中需要两个匹配臂。
 
-<details><summary>Solution (click to expand)</summary>
+<details><summary>答案（点击展开）</summary>
 
 ```rust
 macro_rules! min {
@@ -470,18 +470,18 @@ fn main() {
 }
 ```
 
-**Note:** For production code, prefer `std::cmp::min` or `a.min(b)`. This exercise demonstrates the mechanics of multi-arm macros.
+**注意：** 对于生产代码，优先使用 `std::cmp::min` 或 `a.min(b)`。此练习演示多臂宏的机制。
 
 </details>
 
-### 🟡 Exercise 2: `hashmap!` from scratch
+### 🟡 练习 2：从头开始编写 `hashmap!`
 
-Without looking at the example above, write a `hashmap!` macro that:
-- Creates a `HashMap` from `key => value` pairs
-- Supports trailing commas
-- Works with any hashable key type
+在不看上面示例的情况下，编写一个 `hashmap!` 宏：
+- 从 `key => value` 对创建 `HashMap`
+- 支持尾随逗号
+- 适用于任何可哈希的键类型
 
-Test with:
+测试：
 ```rust
 let m = hashmap! {
     "name" => "Alice",
@@ -491,7 +491,7 @@ assert_eq!(m["name"], "Alice");
 assert_eq!(m.len(), 2);
 ```
 
-<details><summary>Solution (click to expand)</summary>
+<details><summary>答案（点击展开）</summary>
 
 ```rust
 use std::collections::HashMap;
@@ -517,18 +517,18 @@ fn main() {
 
 </details>
 
-### 🟡 Exercise 3: `assert_approx_eq!` for floating-point comparison
+### 🟡 练习 3：`assert_approx_eq!` 用于浮点比较
 
-Write a macro `assert_approx_eq!(a, b, epsilon)` that panics if `|a - b| > epsilon`. This is useful for testing floating-point calculations where exact equality fails.
+编写一个宏 `assert_approx_eq!(a, b, epsilon)`，如果 `|a - b| > epsilon` 则 panic。这对于测试浮点计算很有用，因为精确相等会失败。
 
-Test with:
+测试：
 ```rust
-assert_approx_eq!(0.1 + 0.2, 0.3, 1e-10);        // Should pass
-assert_approx_eq!(3.14159, std::f64::consts::PI, 1e-4); // Should pass
-// assert_approx_eq!(1.0, 2.0, 0.5);              // Should panic
+assert_approx_eq!(0.1 + 0.2, 0.3, 1e-10);        // 应该通过
+assert_approx_eq!(3.14159, std::f64::consts::PI, 1e-4); // 应该通过
+// assert_approx_eq!(1.0, 2.0, 0.5);              // 应该 panic
 ```
 
-<details><summary>Solution (click to expand)</summary>
+<details><summary>答案（点击展开）</summary>
 
 ```rust
 macro_rules! assert_approx_eq {
@@ -553,9 +553,9 @@ fn main() {
 
 </details>
 
-### 🔴 Exercise 4: `impl_display_for_enum!`
+### 🔴 练习 4：`impl_display_for_enum!`
 
-Write a macro that generates a `Display` implementation for simple C-like enums. Given:
+编写一个宏，为简单的 C 风格 enum 生成 `Display` 实现。给定：
 
 ```rust
 impl_display_for_enum! {
@@ -567,11 +567,11 @@ impl_display_for_enum! {
 }
 ```
 
-It should generate both the `enum Color { Red, Green, Blue }` definition AND the `impl Display for Color` that maps each variant to its string.
+它应该生成 `enum Color { Red, Green, Blue }` 定义和 `impl Display for Color`，将每个变体映射到其字符串。
 
-**Hint:** You'll need both `$( ... ),*` repetition and multiple fragment specifiers.
+**提示：** 你需要 `$( ... ),*` 重复和多个片段说明符。
 
-<details><summary>Solution (click to expand)</summary>
+<details><summary>答案（点击展开）</summary>
 
 ```rust
 use std::fmt;

@@ -1,183 +1,171 @@
-# Cross-Compilation — One Source, Many Targets 🟡
+# 跨平台编译 —— 一个源码，多个目标 🟡
 
-> **What you'll learn:**
-> - How Rust target triples work and how to add them with `rustup`
-> - Building static musl binaries for container/cloud deployment
-> - Cross-compiling to ARM (aarch64) with native toolchains, `cross`, and `cargo-zigbuild`
-> - Setting up GitHub Actions matrix builds for multi-architecture CI
+> **你将学到什么：**
+> - Rust 目标三元组如何工作以及如何使用 `rustup` 添加它们
+> - 为容器/云部署构建静态 musl 二进制文件
+> - 使用原生工具链、`cross` 和 `cargo-zigbuild` 跨平台编译到 ARM (aarch64)
+> - 设置 GitHub Actions 矩阵构建用于多架构 CI
 >
-> **Cross-references:** [Build Scripts](ch01-build-scripts-buildrs-in-depth.md) — build.rs runs on HOST during cross-compilation · [Release Profiles](ch07-release-profiles-and-binary-size.md) — LTO and strip settings for cross-compiled release binaries · [Windows](ch10-windows-and-conditional-compilation.md) — Windows cross-compilation and `no_std` targets
+> **交叉引用：** [构建脚本](ch01-build-scripts-buildrs-in-depth.md) —— build.rs 在跨平台编译时在 HOST 上运行 · [发布配置文件](ch07-release-profiles-and-binary-size.md) —— 跨平台编译发布二进制文件的 LTO 和 strip 设置 · [Windows](ch10-windows-and-conditional-compilation.md) —— Windows 跨平台编译和 `no_std` 目标
 
-Cross-compilation means building an executable on one machine (the **host**) that
-runs on a different machine (the **target**). The host might be your x86_64 laptop;
-the target might be an ARM server, a musl-based container, or even a Windows machine.
-Rust makes this remarkably feasible because `rustc` is already a cross-compiler —
-it just needs the right target libraries and a compatible linker.
+跨平台编译意味着在一台机器（**主机**）上构建可执行文件，在另一台机器（**目标**）上运行。主机可能是你的 x86_64 笔记本电脑；目标可能是 ARM 服务器、基于 musl 的容器，甚至是 Windows 机器。Rust 使这变得非常可行，因为 `rustc` 已经是跨平台编译器 —— 它只需要正确的目标库和兼容的链接器。
 
-### The Target Triple Anatomy
+### 目标三元组解剖
 
-Every Rust compilation target is identified by a **target triple** (which often has
-four parts despite the name):
+每个 Rust 编译目标由**目标三元组**（尽管名称如此，但通常有四个部分）标识：
 
 ```text
 <arch>-<vendor>-<os>-<env>
 
-Examples:
-  x86_64  - unknown - linux  - gnu      ← standard Linux (glibc)
-  x86_64  - unknown - linux  - musl     ← static Linux (musl libc)
-  aarch64 - unknown - linux  - gnu      ← ARM 64-bit Linux
-  x86_64  - pc      - windows- msvc     ← Windows with MSVC
-  aarch64 - apple   - darwin             ← macOS on Apple Silicon
-  x86_64  - unknown - none              ← bare metal (no OS)
+示例：
+  x86_64  - unknown - linux  - gnu      ← 标准 Linux（glibc）
+  x86_64  - unknown - linux  - musl     ← 静态 Linux（musl libc）
+  aarch64 - unknown - linux  - gnu      ← ARM 64 位 Linux
+  x86_64  - pc      - windows- msvc     ← 使用 MSVC 的 Windows
+  aarch64 - apple   - darwin             ← Apple Silicon 上的 macOS
+  x86_64  - unknown - none              ← 裸机（无操作系统）
 ```
 
-List all available targets:
+列出所有可用目标：
 
 ```bash
-# Show all targets rustc can compile to (~250 targets)
+# 显示 rustc 可以编译的所有目标（约 250 个目标）
 rustc --print target-list | wc -l
 
-# Show installed targets on your system
+# 显示系统上已安装的目标
 rustup target list --installed
 
-# Show current default target
+# 显示当前默认目标
 rustc -vV | grep host
 ```
 
-### Installing Toolchains with rustup
+### 使用 rustup 安装工具链
 
 ```bash
-# Add target libraries (Rust std for that target)
+# 添加目标库（该目标的 Rust std）
 rustup target add x86_64-unknown-linux-musl
 rustup target add aarch64-unknown-linux-gnu
 
-# Now you can cross-compile:
+# 现在你可以跨平台编译：
 cargo build --target x86_64-unknown-linux-musl
-cargo build --target aarch64-unknown-linux-gnu  # needs a linker — see below
+cargo build --target aarch64-unknown-linux-gnu  # 需要链接器 —— 见下文
 ```
 
-**What `rustup target add` gives you**: the pre-compiled `std`, `core`, and `alloc`
-libraries for that target. It does *not* give you a C linker or C library. For targets
-that need a C toolchain (most `gnu` targets), you need to install one separately.
+**`rustup target add` 给你什么**：为该目标预编译的 `std`、`core` 和 `alloc` 库。它*不*给你 C 链接器或 C 库。对于需要 C 工具链的目标（大多数 `gnu` 目标），你需要单独安装。
 
 ```bash
-# Ubuntu/Debian — install the cross-linker for aarch64
+# Ubuntu/Debian —— 安装 aarch64 的跨平台链接器
 sudo apt install gcc-aarch64-linux-gnu
 
-# Ubuntu/Debian — install musl toolchain for static builds
+# Ubuntu/Debian —— 安装用于静态构建的 musl 工具链
 sudo apt install musl-tools
 
 # Fedora
 sudo dnf install gcc-aarch64-linux-gnu
 ```
 
-### `.cargo/config.toml` — Per-Target Configuration
+### `.cargo/config.toml` —— 每个目标的配置
 
-Instead of passing `--target` on every command, configure defaults in
-`.cargo/config.toml` at your project root or home directory:
+与其在每个命令中传递 `--target`，不如在项目根目录或主目录的 `.cargo/config.toml` 中配置默认值：
 
 ```toml
 # .cargo/config.toml
 
-# Default target for this project (optional — omit to keep native default)
+# 此项目的默认目标（可选 —— 省略以保持原生默认）
 # [build]
 # target = "x86_64-unknown-linux-musl"
 
-# Linker for aarch64 cross-compilation
+# aarch64 跨平台编译的链接器
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
 rustflags = ["-C", "target-feature=+crc"]
 
-# Linker for musl static builds (usually just the system gcc works)
+# musl 静态构建的链接器（通常系统 gcc 有效）
 [target.x86_64-unknown-linux-musl]
 linker = "musl-gcc"
 rustflags = ["-C", "target-feature=+crc,+aes"]
 
-# ARM 32-bit (Raspberry Pi, embedded)
+# ARM 32 位（Raspberry Pi、嵌入式）
 [target.armv7-unknown-linux-gnueabihf]
 linker = "arm-linux-gnueabihf-gcc"
 
-# Environment variables for all targets
+# 所有目标的环境变量
 [env]
-# Example: set a custom sysroot
+# 示例：设置自定义 sysroot
 # SYSROOT = "/opt/cross/sysroot"
 ```
 
-**Config file search order** (first match wins):
+**配置文件搜索顺序**（第一个匹配获胜）：
 1. `<project>/.cargo/config.toml`
-2. `<project>/../.cargo/config.toml` (parent directories, walking up)
-3. `$CARGO_HOME/config.toml` (usually `~/.cargo/config.toml`)
+2. `<project>/../.cargo/config.toml`（父目录，向上遍历）
+3. `$CARGO_HOME/config.toml`（通常是 `~/.cargo/config.toml`）
 
-### Static Binaries with musl
+### 使用 musl 的静态二进制文件
 
-For deploying to minimal containers (Alpine, scratch Docker images) or systems
-where you can't control the glibc version, build with musl:
+对于部署到最小容器（Alpine、scratch Docker 镜像）或你无法控制 glibc 版本的系统，使用 musl 构建：
 
 ```bash
-# Install musl target
+# 安装 musl 目标
 rustup target add x86_64-unknown-linux-musl
-sudo apt install musl-tools  # provides musl-gcc
+sudo apt install musl-tools  # 提供 musl-gcc
 
-# Build a fully static binary
+# 构建完全静态的二进制文件
 cargo build --release --target x86_64-unknown-linux-musl
 
-# Verify it's static
+# 验证它是静态的
 file target/x86_64-unknown-linux-musl/release/diag_tool
-# → ELF 64-bit LSB executable, x86-64, statically linked
+# → ELF 64 位 LSB 可执行文件，x86-64，静态链接
 
 ldd target/x86_64-unknown-linux-musl/release/diag_tool
-# → not a dynamic executable
+# → 不是动态可执行文件
 ```
 
-**Static vs dynamic trade-offs:**
+**静态 vs 动态权衡**：
 
-| Aspect | glibc (dynamic) | musl (static) |
+| 方面 | glibc（动态） | musl（静态） |
 |--------|-----------------|---------------|
-| Binary size | Smaller (shared libs) | Larger (~5-15 MB increase) |
-| Portability | Needs matching glibc version | Runs anywhere on Linux |
-| DNS resolution | Full `nsswitch` support | Basic resolver (no mDNS) |
-| Deployment | Needs sysroot or container | Single binary, no deps |
-| Performance | Slightly faster malloc | Slightly slower malloc |
-| `dlopen()` support | Yes | No |
+| 二进制文件大小 | 较小（共享库） | 较大（约 5-15 MB 增加） |
+| 可移植性 | 需要匹配的 glibc 版本 | 在任何 Linux 上运行 |
+| DNS 解析 | 完整 `nsswitch` 支持 | 基础解析器（无 mDNS） |
+| 部署 | 需要 sysroot 或容器 | 单个二进制文件，无依赖 |
+| 性能 | 稍快的 malloc | 稍慢的 malloc |
+| `dlopen()` 支持 | 是 | 否 |
 
-> **For the project**: A static musl build is ideal for deployment to diverse
-> server hardware where you can't guarantee the host OS version. The single-binary
-> deployment model eliminates "works on my machine" issues.
+> **对于项目**：静态 musl 构建理想部署到多样化的服务器硬件，你无法保证主机操作系统版本。单二进制文件部署模型消除了"在我的机器上有效"的问题。
 
-### Cross-Compiling to ARM (aarch64)
+### 跨平台编译到 ARM (aarch64)
 
-ARM servers (AWS Graviton, Ampere Altra, Grace) are increasingly common
-in data centers. Cross-compiling for aarch64 from an x86_64 host:
+ARM 服务器（AWS Graviton、Ampere Altra、Grace）在数据中心越来越常见。从 x86_64 主机跨平台编译到 aarch64：
 
 ```bash
-# Step 1: Install target + cross-linker
+# 步骤 1：安装目标 + 跨平台链接器
 rustup target add aarch64-unknown-linux-gnu
 sudo apt install gcc-aarch64-linux-gnu
 
-# Step 2: Configure linker in .cargo/config.toml (see above)
+# 步骤 2：在 .cargo/config.toml 中配置链接器（见上文）
 
-# Step 3: Build
+# 步骤 3：构建
 cargo build --release --target aarch64-unknown-linux-gnu
 
-# Step 4: Verify the binary
+# 步骤 4：验证二进制文件
 file target/aarch64-unknown-linux-gnu/release/diag_tool
-# → ELF 64-bit LSB executable, ARM aarch64
+# → ELF 64 位 LSB 可执行文件，ARM aarch64
 ```
 
-**Running tests for the target architecture** requires either:
-- An actual ARM machine
-- QEMU user-mode emulation
+**运行目标架构的测试**需要：
+- 实际的 ARM 机器
+- QEMU 用户模式模拟
 
 ```bash
-# Install QEMU user-mode (runs ARM binaries on x86_64)
+# 安装 QEMU 用户模式（在 x86_64 上运行 ARM 二进制文件）
 sudo apt install qemu-user qemu-user-static binfmt-support
 
-# Now cargo test can run cross-compiled tests through QEMU
+# 现在 cargo test 可以通过 QEMU 运行跨平台编译的测试
 cargo test --target aarch64-unknown-linux-gnu
-# (Slow — each test binary is emulated. Use for CI validation, not daily dev.)
+# （慢 —— 每个测试二进制文件都被模拟。用于 CI 验证，不是日常开发。）
 ```
 
-Configure QEMU as the test runner in `.cargo/config.toml`:
+在 `.cargo/config.toml` 中配置 QEMU 作为测试运行器：
 
 ```toml
 [target.aarch64-unknown-linux-gnu]
@@ -185,108 +173,97 @@ linker = "aarch64-linux-gnu-gcc"
 runner = "qemu-aarch64-static -L /usr/aarch64-linux-gnu"
 ```
 
-### The `cross` Tool — Docker-Based Cross-Compilation
+### `cross` 工具 —— 基于 Docker 的跨平台编译
 
-The [`cross`](https://github.com/cross-rs/cross) tool provides a zero-setup
-cross-compilation experience using pre-configured Docker images:
+[`cross`](https://github.com/cross-rs/cross) 工具使用预配置的 Docker 镜像提供零设置的跨平台编译体验：
 
 ```bash
-# Install cross (from crates.io — stable releases)
+# 安装 cross（来自 crates.io —— 稳定版本）
 cargo install cross
-# Or from git for latest features (less stable):
+# 或从 git 安装获取最新功能（较不稳定）：
 # cargo install cross --git https://github.com/cross-rs/cross
 
-# Cross-compile — no toolchain setup needed!
+# 跨平台编译 —— 无需工具链设置！
 cross build --release --target aarch64-unknown-linux-gnu
 cross build --release --target x86_64-unknown-linux-musl
 cross build --release --target armv7-unknown-linux-gnueabihf
 
-# Cross-test — QEMU included in the Docker image
+# 跨平台测试 —— QEMU 包含在 Docker 镜像中
 cross test --target aarch64-unknown-linux-gnu
 ```
 
-**How it works**: `cross` replaces `cargo` and runs the build inside a Docker
-container that has the correct cross-compilation toolchain pre-installed. Your
-source is mounted into the container, and the output goes to your normal `target/`
-directory.
+**工作原理**：`cross` 替换 `cargo` 并在 Docker 容器内运行构建，该容器已预装正确的跨平台编译工具链。你的源代码挂载到容器中，输出进入正常的 `target/` 目录。
 
-**Customizing the Docker image** with `Cross.toml`:
+**使用 `Cross.toml` 自定义 Docker 镜像**：
 
 ```toml
 # Cross.toml
 [target.aarch64-unknown-linux-gnu]
-# Use a custom Docker image with extra system libraries
+# 使用带额外系统库的自定义 Docker 镜像
 image = "my-registry/cross-aarch64:latest"
 
-# Pre-install system packages
+# 预安装系统包
 pre-build = [
     "dpkg --add-architecture arm64",
     "apt-get update && apt-get install -y libpci-dev:arm64"
 ]
 
 [target.aarch64-unknown-linux-gnu.env]
-# Pass environment variables into the container
+# 将环境变量传递到容器中
 passthrough = ["CI", "GITHUB_TOKEN"]
 ```
 
-`cross` requires Docker (or Podman) but eliminates the need to manually install
-cross-compilers, sysroots, and QEMU. It's the recommended approach for CI.
+`cross` 需要 Docker（或 Podman），但消除了手动安装跨平台编译器、sysroot 和 QEMU 的需要。这是 CI 推荐的方法。
 
-### Using Zig as a Cross-Compilation Linker
+### 使用 Zig 作为跨平台编译链接器
 
-[Zig](https://ziglang.org/) bundles a C compiler and cross-compilation sysroot
-for ~40 targets in a single ~40 MB download. This makes it a remarkably convenient
-cross-linker for Rust:
+[Zig](https://ziglang.org/) 在单个约 40 MB 下载中捆绑了 C 编译器和跨平台编译 sysroot，支持约 40 个目标。这使其成为 Rust 异常方便的跨平台链接器：
 
 ```bash
-# Install Zig (single binary, no package manager needed)
-# Download from https://ziglang.org/download/
-# Or via package manager:
+# 安装 Zig（单个二进制文件，无需包管理器）
+# 从 https://ziglang.org/download/ 下载
+# 或通过包管理器：
 sudo snap install zig --classic --beta  # Ubuntu
 brew install zig                          # macOS
 
-# Install cargo-zigbuild
+# 安装 cargo-zigbuild
 cargo install cargo-zigbuild
 ```
 
-**Why Zig?** The key advantage is **glibc version targeting**. Zig lets you specify
-the exact glibc version to link against, ensuring your binary runs on older Linux
-distributions:
+**为什么使用 Zig？** 关键优势是**glibc 版本定位**。Zig 允许你指定要链接的确切 glibc 版本，确保二进制文件在较旧的 Linux 发行版上运行：
 
 ```bash
-# Build for glibc 2.17 (CentOS 7 / RHEL 7 compatibility)
+# 为 glibc 2.17 构建（CentOS 7 / RHEL 7 兼容）
 cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
 
-# Build for aarch64 with glibc 2.28 (Ubuntu 18.04+)
+# 为 aarch64 与 glibc 2.28 构建（Ubuntu 18.04+）
 cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.28
 
-# Build for musl (fully static)
+# 为 musl 构建（完全静态）
 cargo zigbuild --release --target x86_64-unknown-linux-musl
 ```
 
-The `.2.17` suffix is a Zig extension — it tells Zig's linker to use glibc 2.17
-symbol versions, so the resulting binary runs on CentOS 7 and later. No Docker,
-no sysroot management, no cross-compiler installation.
+`.2.17` 后缀是 Zig 扩展 —— 它告诉 Zig 的链接器使用 glibc 2.17 符号版本，因此生成的二进制文件在 CentOS 7 及更高版本上运行。无需 Docker、无 sysroot 管理、无跨平台编译器安装。
 
-**Comparison: cross vs cargo-zigbuild vs manual:**
+**比较：cross vs cargo-zigbuild vs 手动**：
 
-| Feature | Manual | cross | cargo-zigbuild |
+| 功能 | 手动 | cross | cargo-zigbuild |
 |---------|--------|-------|----------------|
-| Setup effort | High (install toolchain per target) | Low (needs Docker) | Low (single binary) |
-| Docker required | No | Yes | No |
-| glibc version targeting | No (uses host glibc) | No (uses container glibc) | Yes (exact version) |
-| Test execution | Needs QEMU | Included | Needs QEMU |
-| macOS → Linux | Difficult | Easy | Easy |
-| Linux → macOS | Very difficult | Not supported | Limited |
-| Binary size overhead | None | None | None |
+| 设置工作 | 高（每个目标安装工具链） | 低（需要 Docker） | 低（单个二进制文件） |
+| 需要 Docker | 否 | 是 | 否 |
+| glibc 版本定位 | 否（使用主机 glibc） | 否（使用容器 glibc） | 是（确切版本） |
+| 测试执行 | 需要 QEMU | 包含 | 需要 QEMU |
+| macOS → Linux | 困难 | 容易 | 容易 |
+| Linux → macOS | 非常困难 | 不支持 | 有限 |
+| 二进制文件大小开销 | 无 | 无 | 无 |
 
-### CI Pipeline: GitHub Actions Matrix
+### CI 管道：GitHub Actions 矩阵
 
-A production-grade CI workflow that builds for multiple targets:
+生产级 CI 工作流，为多个目标构建：
 
 ```yaml
 # .github/workflows/cross-build.yml
-name: Cross-Platform Build
+name: 跨平台构建
 
 on: [push, pull_request]
 
@@ -313,7 +290,7 @@ jobs:
             name: windows-x86_64
 
     runs-on: ${{ matrix.os }}
-    name: Build (${{ matrix.name }})
+    name: 构建 (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
@@ -322,112 +299,106 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl tools
+      - name: 安装 musl 工具
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get install -y musl-tools
 
-      - name: Install cross
+      - name: 安装 cross
         if: matrix.use_cross
         run: cargo install cross
 
-      - name: Build (native)
+      - name: 构建（原生）
         if: "!matrix.use_cross"
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build (cross)
+      - name: 构建（cross）
         if: matrix.use_cross
         run: cross build --release --target ${{ matrix.target }}
 
-      - name: Run tests
+      - name: 运行测试
         if: "!matrix.use_cross"
         run: cargo test --target ${{ matrix.target }}
 
-      - name: Upload artifact
+      - name: 上传工件
         uses: actions/upload-artifact@v4
         with:
           name: diag_tool-${{ matrix.name }}
           path: target/${{ matrix.target }}/release/diag_tool*
 ```
 
-### Application: Multi-Architecture Server Builds
+### 应用：多架构服务器构建
 
-The binary currently has no cross-compilation setup. For a hardware
-diagnostics tool deployed across diverse server fleets, the recommended addition:
+二进制文件当前没有跨平台编译设置。对于部署到多样化服务器群的硬件诊断工具，推荐添加：
 
 ```text
 my_workspace/
 ├── .cargo/
-│   └── config.toml          ← linker configs per target
-├── Cross.toml                ← cross tool configuration
+│   └── config.toml          ← 每个目标的链接器配置
+├── Cross.toml                ← cross 工具配置
 └── .github/workflows/
-    └── cross-build.yml       ← CI matrix for 3 targets
+    └── cross-build.yml       ← 3 个目标的 CI 矩阵
 ```
 
-**Recommended `.cargo/config.toml`:**
+**推荐 `.cargo/config.toml`**：
 
 ```toml
-# .cargo/config.toml for the project
+# 项目的 .cargo/config.toml
 
-# Release profile optimizations (already in Cargo.toml, shown for reference)
+# 发布配置文件优化（已在 Cargo.toml 中，供参考）
 # [profile.release]
 # lto = true
 # codegen-units = 1
 # panic = "abort"
 # strip = true
 
-# aarch64 for ARM servers (Graviton, Ampere, Grace)
+# aarch64 用于 ARM 服务器（Graviton、Ampere、Grace）
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
 
-# musl for portable static binaries
+# musl 用于可移植静态二进制文件
 [target.x86_64-unknown-linux-musl]
 linker = "musl-gcc"
 ```
 
-**Recommended build targets:**
+**推荐构建目标**：
 
-| Target | Use Case | Deploy To |
+| 目标 | 用例 | 部署到 |
 |--------|----------|-----------|
-| `x86_64-unknown-linux-gnu` | Default native build | Standard x86 servers |
-| `x86_64-unknown-linux-musl` | Static binary, any distro | Containers, minimal hosts |
-| `aarch64-unknown-linux-gnu` | ARM servers | Graviton, Ampere, Grace |
+| `x86_64-unknown-linux-gnu` | 默认原生构建 | 标准 x86 服务器 |
+| `x86_64-unknown-linux-musl` | 静态二进制文件，任何发行版 | 容器、最小主机 |
+| `aarch64-unknown-linux-gnu` | ARM 服务器 | Graviton、Ampere、Grace |
 
-> **Key insight**: The `[profile.release]` in the workspace's root `Cargo.toml`
-> already has `lto = true`, `codegen-units = 1`, `panic = "abort"`, and
-> `strip = true` — an ideal release profile for cross-compiled deployment binaries
-> (see [Release Profiles](ch07-release-profiles-and-binary-size.md) for the full impact table).
-> Combined with musl, this produces a single ~10 MB static binary with no runtime
-> dependencies.
+> **关键洞察**：工作空间根 `Cargo.toml` 中的 `[profile.release]` 已经有 `lto = true`、`codegen-units = 1`、`panic = "abort"` 和 `strip = true` —— 跨平台编译部署二进制文件的理想发布配置文件（参见 [发布配置文件](ch07-release-profiles-and-binary-size.md) 获取完整影响表）。与 musl 结合，这产生单个约 10 MB 静态二进制文件，无运行时依赖。
 
-### Troubleshooting Cross-Compilation
+### 跨平台编译故障排除
 
-| Symptom | Cause | Fix |
+| 症状 | 原因 | 修复 |
 |---------|-------|-----|
-| `linker 'aarch64-linux-gnu-gcc' not found` | Missing cross-linker toolchain | `sudo apt install gcc-aarch64-linux-gnu` |
-| `cannot find -lssl` (musl target) | System OpenSSL is glibc-linked | Use `vendored` feature: `openssl = { version = "0.10", features = ["vendored"] }` |
-| `build.rs` runs wrong binary | build.rs runs on HOST, not target | Check `CARGO_CFG_TARGET_OS` in build.rs, not `cfg!(target_os)` |
-| Tests pass locally, fail in `cross` | Docker image missing test fixtures | Mount test data via `Cross.toml`: `[build.env] volumes = ["./TestArea:/TestArea"]` |
-| `undefined reference to __cxa_thread_atexit_impl` | Old glibc on target | Use `cargo-zigbuild` with explicit glibc version: `--target x86_64-unknown-linux-gnu.2.17` |
-| Binary segfaults on ARM | Compiled for wrong ARM variant | Verify target triple matches hardware: `aarch64-unknown-linux-gnu` for 64-bit ARM |
-| `GLIBC_2.XX not found` at runtime | Build machine has newer glibc | Use musl for static builds, or `cargo-zigbuild` for glibc version pinning |
+| `linker 'aarch64-linux-gnu-gcc' not found` | 缺少跨平台链接器工具链 | `sudo apt install gcc-aarch64-linux-gnu` |
+| `cannot find -lssl` (musl 目标) | 系统 OpenSSL 与 glibc 链接 | 使用 `vendored` 功能：`openssl = { version = "0.10", features = ["vendored"] }` |
+| `build.rs` 运行错误的二进制文件 | build.rs 在 HOST 上运行，不在目标 | 检查 `CARGO_CFG_TARGET_OS` 在 build.rs 中，不是 `cfg!(target_os)` |
+| 测试本地通过，在 `cross` 中失败 | Docker 镜像缺少测试夹具 | 通过 `Cross.toml` 挂载测试数据：`[build.env] volumes = ["./TestArea:/TestArea"]` |
+| `undefined reference to __cxa_thread_atexit_impl` | 目标上 glibc 旧 | 使用 `cargo-zigbuild` 带显式 glibc 版本：`--target x86_64-unknown-linux-gnu.2.17` |
+| 二进制文件在 ARM 上段错误 | 为错误的 ARM 变体编译 | 验证目标三元组匹配硬件：`aarch64-unknown-linux-gnu` 用于 64 位 ARM |
+| 运行时 `GLIBC_2.XX not found` | 构建机器有更新的 glibc | 使用 musl 进行静态构建，或 `cargo-zigbuild` 用于 glibc 版本固定 |
 
-### Cross-Compilation Decision Tree
+### 跨平台编译决策树
 
 ```mermaid
 flowchart TD
-    START["Need to cross-compile?"] --> STATIC{"Static binary?"}
+    START["需要跨平台编译？"] --> STATIC{"静态二进制文件？"}
     
-    STATIC -->|Yes| MUSL["musl target\n--target x86_64-unknown-linux-musl"]
-    STATIC -->|No| GLIBC{"Need old glibc?"}
+    STATIC -->|是 | MUSL["musl 目标\n--target x86_64-unknown-linux-musl"]
+    STATIC -->|否 | GLIBC{"需要旧 glibc？"}
     
-    GLIBC -->|Yes| ZIG["cargo-zigbuild\n--target x86_64-unknown-linux-gnu.2.17"]
-    GLIBC -->|No| ARCH{"Target arch?"}
+    GLIBC -->|是 | ZIG["cargo-zigbuild\n--target x86_64-unknown-linux-gnu.2.17"]
+    GLIBC -->|否 | ARCH{"目标架构？"}
     
-    ARCH -->|"Same arch"| NATIVE["Native toolchain\nrustup target add + linker"]
-    ARCH -->|"ARM/other"| DOCKER{"Docker available?"}
+    ARCH -->|"相同架构"| NATIVE["原生工具链\nrustup target add + 链接器"]
+    ARCH -->|"ARM/其他"| DOCKER{"Docker 可用？"}
     
-    DOCKER -->|Yes| CROSS["cross build\nDocker-based, zero setup"]
-    DOCKER -->|No| MANUAL["Manual sysroot\napt install gcc-aarch64-linux-gnu"]
+    DOCKER -->|是 | CROSS["cross build\n基于 Docker，零设置"]
+    DOCKER -->|否 | MANUAL["手动 sysroot\napt install gcc-aarch64-linux-gnu"]
     
     style MUSL fill:#91e5a3,color:#000
     style ZIG fill:#91e5a3,color:#000
@@ -436,38 +407,38 @@ flowchart TD
     style MANUAL fill:#ffd43b,color:#000
 ```
 
-### 🏋️ Exercises
+### 🏋️ 练习
 
-#### 🟢 Exercise 1: Static musl Binary
+#### 🟢 练习 1：静态 musl 二进制文件
 
-Build any Rust binary for `x86_64-unknown-linux-musl`. Verify it's statically linked using `file` and `ldd`.
+为 `x86_64-unknown-linux-musl` 构建任何 Rust 二进制文件。使用 `file` 和 `ldd` 验证它是静态链接的。
 
 <details>
-<summary>Solution</summary>
+<summary>答案</summary>
 
 ```bash
 rustup target add x86_64-unknown-linux-musl
 cargo new hello-static && cd hello-static
 cargo build --release --target x86_64-unknown-linux-musl
 
-# Verify
+# 验证
 file target/x86_64-unknown-linux-musl/release/hello-static
-# Output: ... statically linked ...
+# 输出：... 静态链接 ...
 
 ldd target/x86_64-unknown-linux-musl/release/hello-static
-# Output: not a dynamic executable
+# 输出：不是动态可执行文件
 ```
 </details>
 
-#### 🟡 Exercise 2: GitHub Actions Cross-Build Matrix
+#### 🟡 练习 2：GitHub Actions 跨平台编译矩阵
 
-Write a GitHub Actions workflow that builds a Rust project for three targets: `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, and `aarch64-unknown-linux-gnu`. Use a matrix strategy.
+编写一个 GitHub Actions 工作流，为三个目标构建 Rust 项目：`x86_64-unknown-linux-gnu`、`x86_64-unknown-linux-musl` 和 `aarch64-unknown-linux-gnu`。使用矩阵策略。
 
 <details>
-<summary>Solution</summary>
+<summary>答案</summary>
 
 ```yaml
-name: Cross-build
+name: 跨平台构建
 on: [push]
 jobs:
   build:
@@ -483,9 +454,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - name: Install cross
+      - name: 安装 cross
         run: cargo install cross --locked
-      - name: Build
+      - name: 构建
         run: cross build --release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
@@ -494,13 +465,12 @@ jobs:
 ```
 </details>
 
-### Key Takeaways
+### 关键要点
 
-- Rust's `rustc` is already a cross-compiler — you just need the right target and linker
-- **musl** produces fully static binaries with zero runtime dependencies — ideal for containers
-- **`cargo-zigbuild`** solves the "which glibc version" problem for enterprise Linux targets
-- **`cross`** is the easiest path for ARM and other exotic targets — Docker handles the sysroot
-- Always test with `file` and `ldd` to verify the binary matches your deployment target
+- Rust 的 `rustc` 已经是跨平台编译器 —— 你只需要正确的目标和链接器
+- **musl** 产生完全静态的二进制文件，零运行时依赖 —— 容器的理想选择
+- **`cargo-zigbuild`** 解决企业 Linux 目标的"glibc 版本"问题
+- **`cross`** 是 ARM 和其他奇异目标的最简单路径 —— Docker 处理 sysroot
+- 始终使用 `file` 和 `ldd` 验证二进制文件匹配你的部署目标
 
 ---
-

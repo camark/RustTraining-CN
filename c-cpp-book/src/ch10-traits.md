@@ -1,9 +1,9 @@
 # Rust traits
 
-> **What you'll learn:** Traits — Rust's answer to interfaces, abstract base classes, and operator overloading. You'll learn how to define traits, implement them for your types, and use dynamic dispatch (`dyn Trait`) vs static dispatch (generics). For C++ developers: traits replace virtual functions, CRTP, and concepts. For C developers: traits are the structured way Rust does polymorphism.
+> **你将学到什么：** Traits —— Rust 对接口、抽象基类和运算符重载的回答。你将学习如何定义 traits、为你的类型实现它们，以及使用动态派（`dyn Trait`）vs 静态派（泛型）。对于 C++ 开发者：traits 取代虚函数、CRTP 和 concepts。对于 C 开发者：traits 是 Rust 进行多态性的结构化方式。
 
-- Rust traits are similar to interfaces in other languages
-    - Traits define methods that must be defined by types that implement the trait.
+- Rust traits 与其他语言中的接口类似
+    - Traits 定义必须由实现 trait 的类型定义的方法。
 ```rust
 fn main() {
     trait Pet {
@@ -23,20 +23,20 @@ fn main() {
     }
     let c = Cat{};
     let d = Dog{};
-    c.speak();  // There is no "is a" relationship between Cat and Dog
-    d.speak(); // There is no "is a" relationship between Cat and Dog
+    c.speak();  // Cat 和 Dog 之间没有"is a"关系
+    d.speak(); // Cat 和 Dog 之间没有"is a"关系
 }
 ```
 
-## Traits vs C++ Concepts and Interfaces
+## Traits vs C++ Concepts 和接口
 
-### Traditional C++ Inheritance vs Rust Traits
+### 传统 C++ 继承 vs Rust Traits
 
 ```cpp
-// C++ - Inheritance-based polymorphism
+// C++ - 基于继承的多态
 class Animal {
 public:
-    virtual void speak() = 0;  // Pure virtual function
+    virtual void speak() = 0;  // 纯虚函数
     virtual ~Animal() = default;
 };
 
@@ -47,56 +47,56 @@ public:
     }
 };
 
-void make_sound(Animal* animal) {  // Runtime polymorphism
-    animal->speak();  // Virtual function call
+void make_sound(Animal* animal) {  // 运行时多态
+    animal->speak();  // 虚函数调用
 }
 ```
 
 ```rust
-// Rust - Composition over inheritance with traits
+// Rust - 使用 traits 组合优于继承
 trait Animal {
     fn speak(&self);
 }
 
-struct Cat;  // Cat is NOT an Animal, but IMPLEMENTS Animal behavior
+struct Cat;  // Cat 不是 Animal，但实现 Animal 行为
 
-impl Animal for Cat {  // "Cat CAN-DO Animal behavior"
+impl Animal for Cat {  // "Cat CAN-DO Animal 行为"
     fn speak(&self) {
         println!("Meow");
     }
 }
 
-fn make_sound<T: Animal>(animal: &T) {  // Static polymorphism
-    animal.speak();  // Direct function call (zero cost)
+fn make_sound<T: Animal>(animal: &T) {  // 静态多态
+    animal.speak();  // 直接函数调用（零成本）
 }
 ```
 
 ```mermaid
 graph TD
-    subgraph "C++ Object-Oriented Hierarchy"
-        CPP_ANIMAL["Animal<br/>(Abstract base class)"]
-        CPP_CAT["Cat : public Animal<br/>(IS-A relationship)"]
-        CPP_DOG["Dog : public Animal<br/>(IS-A relationship)"]
+    subgraph "C++ 面向对象层次结构"
+        CPP_ANIMAL["Animal<br/>（抽象基类）"]
+        CPP_CAT["Cat : public Animal<br/>（IS-A 关系）"]
+        CPP_DOG["Dog : public Animal<br/>（IS-A 关系）"]
         
         CPP_ANIMAL --> CPP_CAT
         CPP_ANIMAL --> CPP_DOG
         
-        CPP_VTABLE["Virtual function table<br/>(Runtime dispatch)"]
-        CPP_HEAP["Often requires<br/>heap allocation"]
-        CPP_ISSUES["[ERROR] Deep inheritance trees<br/>[ERROR] Diamond problem<br/>[ERROR] Runtime overhead<br/>[ERROR] Tight coupling"]
+        CPP_VTABLE["虚函数表<br/>（运行时派）"]
+        CPP_HEAP["通常需要<br/>堆分配"]
+        CPP_ISSUES["[错误] 深层继承树<br/>[错误] 菱形问题<br/>[错误] 运行时开销<br/>[错误] 紧耦合"]
     end
     
-    subgraph "Rust Trait-Based Composition"
-        RUST_TRAIT["trait Animal<br/>(Behavior definition)"]
-        RUST_CAT["struct Cat<br/>(Data only)"]
-        RUST_DOG["struct Dog<br/>(Data only)"]
+    subgraph "Rust 基于 Trait 的组合"
+        RUST_TRAIT["trait Animal<br/>（行为定义）"]
+        RUST_CAT["struct Cat<br/>（仅数据）"]
+        RUST_DOG["struct Dog<br/>（仅数据）"]
         
-        RUST_CAT -.->|"impl Animal for Cat<br/>(CAN-DO behavior)"| RUST_TRAIT
-        RUST_DOG -.->|"impl Animal for Dog<br/>(CAN-DO behavior)"| RUST_TRAIT
+        RUST_CAT -.->|"impl Animal for Cat<br/>（CAN-DO 行为）"| RUST_TRAIT
+        RUST_DOG -.->|"impl Animal for Dog<br/>（CAN-DO 行为）"| RUST_TRAIT
         
-        RUST_STATIC["Static dispatch<br/>(Compile-time)"]
-        RUST_STACK["Stack allocation<br/>possible"]
-        RUST_BENEFITS["[OK] No inheritance hierarchy<br/>[OK] Multiple trait impls<br/>[OK] Zero runtime cost<br/>[OK] Loose coupling"]
+        RUST_STATIC["静态派<br/>（编译时）"]
+        RUST_STACK["栈分配<br/>可能"]
+        RUST_BENEFITS["[好] 无继承层次结构<br/>[好] 多个 trait 实现<br/>[好] 零运行时成本<br/>[好] 松耦合"]
     end
     
     style CPP_ISSUES fill:#ff6b6b,color:#000
@@ -105,59 +105,59 @@ graph TD
     style RUST_STATIC fill:#91e5a3,color:#000
 ```
 
-### Trait Bounds and Generic Constraints
+### Trait 边界和泛型约束
 
 ```rust
 use std::fmt::Display;
 use std::ops::Add;
 
-// C++ template equivalent (less constrained)
+// C++ 模板等价物（约束较少）
 // template<typename T>
 // T add_and_print(T a, T b) {
-//     // No guarantee T supports + or printing
-//     return a + b;  // Might fail at compile time
+//     // 无保证 T 支持 + 或打印
+//     return a + b;  // 可能在编译时失败
 // }
 
-// Rust - explicit trait bounds
+// Rust - 显式 trait 边界
 fn add_and_print<T>(a: T, b: T) -> T 
 where 
     T: Display + Add<Output = T> + Copy,
 {
-    println!("Adding {} + {}", a, b);  // Display trait
+    println!("相加 {} + {}", a, b);  // Display trait
     a + b  // Add trait
 }
 ```
 
 ```mermaid
 graph TD
-    subgraph "Generic Constraints Evolution"
-        UNCONSTRAINED["fn process<T>(data: T)<br/>[ERROR] T can be anything"]
-        SINGLE_BOUND["fn process<T: Display>(data: T)<br/>[OK] T must implement Display"]
-        MULTI_BOUND["fn process<T>(data: T)<br/>where T: Display + Clone + Debug<br/>[OK] Multiple requirements"]
+    subgraph "泛型约束演进"
+        UNCONSTRAINED["fn process<T>(data: T)<br/>[错误] T 可以是任何类型"]
+        SINGLE_BOUND["fn process<T: Display>(data: T)<br/>[好] T 必须实现 Display"]
+        MULTI_BOUND["fn process<T>(data: T)<br/>where T: Display + Clone + Debug<br/>[好] 多个要求"]
         
         UNCONSTRAINED --> SINGLE_BOUND
         SINGLE_BOUND --> MULTI_BOUND
     end
     
-    subgraph "Trait Bound Syntax"
+    subgraph "Trait 边界语法"
         INLINE["fn func<T: Trait>(param: T)"]
         WHERE_CLAUSE["fn func<T>(param: T)<br/>where T: Trait"]
         IMPL_PARAM["fn func(param: impl Trait)"]
         
-        COMPARISON["Inline: Simple cases<br/>Where: Complex bounds<br/>impl: Concise syntax"]
+        COMPARISON["内联：简单情况<br/>Where：复杂边界<br/>impl：简洁语法"]
     end
     
-    subgraph "Compile-time Magic"
-        GENERIC_FUNC["Generic function<br/>with trait bounds"]
-        TYPE_CHECK["Compiler verifies<br/>trait implementations"]
-        MONOMORPH["Monomorphization<br/>(Create specialized versions)"]
-        OPTIMIZED["Fully optimized<br/>machine code"]
+    subgraph "编译时魔法"
+        GENERIC_FUNC["泛型函数<br/>带 trait 边界"]
+        TYPE_CHECK["编译器验证<br/>trait 实现"]
+        MONOMORPH["单态化<br/>（创建特化版本）"]
+        OPTIMIZED["完全优化的<br/>机器码"]
         
         GENERIC_FUNC --> TYPE_CHECK
         TYPE_CHECK --> MONOMORPH
         MONOMORPH --> OPTIMIZED
         
-        EXAMPLE["add_and_print::<i32><br/>add_and_print::<f64><br/>(Separate functions generated)"]
+        EXAMPLE["add_and_print::<i32><br/>add_and_print::<f64><br/>（生成单独的函数）"]
         MONOMORPH --> EXAMPLE
     end
     
@@ -167,14 +167,14 @@ graph TD
     style OPTIMIZED fill:#91e5a3,color:#000
 ```
 
-### C++ Operator Overloading → Rust `std::ops` Traits
+### C++ 运算符重载 → Rust `std::ops` Traits
 
-In C++, you overload operators by writing free functions or member functions with special names (`operator+`, `operator<<`, `operator[]`, etc.). In Rust, every operator maps to a trait in `std::ops` (or `std::fmt` for output). You **implement the trait** instead of writing a magic-named function.
+在 C++ 中，你通过编写具有特殊名称（`operator+`、`operator<<`、`operator[]` 等）的自由函数或成员函数来重载运算符。在 Rust 中，每个运算符映射到 `std::ops`（或 `std::fmt` 用于输出）中的一个 trait。你**实现 trait** 而不是编写魔法名称的函数。
 
-#### Side-by-side: `+` operator
+#### 并排对比：`+` 运算符
 
 ```cpp
-// C++: operator overloading as a member or free function
+// C++：运算符重载作为成员或自由函数
 struct Vec2 {
     double x, y;
     Vec2 operator+(const Vec2& rhs) const {
@@ -183,7 +183,7 @@ struct Vec2 {
 };
 
 Vec2 a{1.0, 2.0}, b{3.0, 4.0};
-Vec2 c = a + b;  // calls a.operator+(b)
+Vec2 c = a + b;  // 调用 a.operator+(b)
 ```
 
 ```rust
@@ -193,7 +193,7 @@ use std::ops::Add;
 struct Vec2 { x: f64, y: f64 }
 
 impl Add for Vec2 {
-    type Output = Vec2;                     // Associated type — the result of +
+    type Output = Vec2;                     // 关联类型 —— + 的结果
     fn add(self, rhs: Vec2) -> Vec2 {
         Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
     }
@@ -201,81 +201,81 @@ impl Add for Vec2 {
 
 let a = Vec2 { x: 1.0, y: 2.0 };
 let b = Vec2 { x: 3.0, y: 4.0 };
-let c = a + b;  // calls <Vec2 as Add>::add(a, b)
+let c = a + b;  // 调用 <Vec2 as Add>::add(a, b)
 println!("{c:?}"); // Vec2 { x: 4.0, y: 6.0 }
 ```
 
-#### Key differences from C++
+#### 与 C++ 的关键区别
 
-| Aspect | C++ | Rust |
+| 方面 | C++ | Rust |
 |--------|-----|------|
-| **Mechanism** | Magic function names (`operator+`) | Implement a trait (`impl Add for T`) |
-| **Discovery** | Grep for `operator+` or read the header | Look at trait impls — IDE support excellent |
-| **Return type** | Free choice | Fixed by the `Output` associated type |
-| **Receiver** | Usually takes `const T&` (borrows) | Takes `self` by value (moves!) by default |
-| **Symmetry** | Can write `impl operator+(int, Vec2)` | Must add `impl Add<Vec2> for i32` (foreign trait rules apply) |
-| **`<<` for printing** | `operator<<(ostream&, T)` — overload for *any* stream | `impl fmt::Display for T` — one canonical `to_string` representation |
+| **机制** | 魔法函数名（`operator+`） | 实现 trait（`impl Add for T`） |
+| **发现** | Grep 搜索 `operator+` 或阅读头文件 | 查找 trait 实现 —— IDE 支持优秀 |
+| **返回类型** | 自由选择 | 由 `Output` 关联类型固定 |
+| **接收者** | 通常采用 `const T&`（借用） | 默认采用 `self` 按值（移动！） |
+| **对称性** | 可以写 `impl operator+(int, Vec2)` | 必须添加 `impl Add<Vec2> for i32`（适用外部 trait 规则） |
+| **`<<` 用于打印** | `operator<<(ostream&, T)` —— 为*任何*流重载 | `impl fmt::Display for T` —— 一个规范的 `to_string` 表示 |
 
-#### The `self` by value gotcha
+#### `self` 按值的陷阱
 
-In Rust, `Add::add(self, rhs)` takes `self` **by value**. For `Copy` types (like `Vec2` above, which derives `Copy`) this is fine — the compiler copies. But for non-`Copy` types, `+` **consumes** the operands:
+在 Rust 中，`Add::add(self, rhs)` 采用 `self`**按值**。对于 `Copy` 类型（如上面的 `Vec2`，派生 `Copy`）这没问题 —— 编译器复制。但对于非 `Copy` 类型，`+`**消耗**操作数：
 
 ```rust
 let s1 = String::from("hello ");
 let s2 = String::from("world");
-let s3 = s1 + &s2;  // s1 is MOVED into s3!
-// println!("{s1}");  // ❌ Compile error: value used after move
-println!("{s2}");     // ✅ s2 was only borrowed (&s2)
+let s3 = s1 + &s2;  // s1 被移动到 s3！
+// println!("{s1}");  // ❌ 编译错误：移动后使用值
+println!("{s2}");     // ✅ s2 仅被借用（&s2）
 ```
 
-This is why `String + &str` works but `&str + &str` does not — `Add` is only implemented for `String + &str`, consuming the left-hand `String` to reuse its buffer. This has no C++ analogue: `std::string::operator+` always creates a new string.
+这就是为什么 `String + &str` 可行但 `&str + &str` 不可行 —— `Add` 仅为 `String + &str` 实现，消耗左侧 `String` 以重用其缓冲区。这在 C++ 中没有 аналог：`std::string::operator+` 总是创建新字符串。
 
-#### Full mapping: C++ operators → Rust traits
+#### 完整映射：C++ 运算符 → Rust traits
 
-| C++ Operator | Rust Trait | Notes |
+| C++ 运算符 | Rust Trait | 注释 |
 |-------------|-----------|-------|
-| `operator+` | `std::ops::Add` | `Output` associated type |
+| `operator+` | `std::ops::Add` | `Output` 关联类型 |
 | `operator-` | `std::ops::Sub` | |
-| `operator*` | `std::ops::Mul` | Not pointer deref — that's `Deref` |
+| `operator*` | `std::ops::Mul` | 不是指针解引用 —— 那是 `Deref` |
 | `operator/` | `std::ops::Div` | |
 | `operator%` | `std::ops::Rem` | |
-| `operator-` (unary) | `std::ops::Neg` | |
-| `operator!` / `operator~` | `std::ops::Not` | Rust uses `!` for both logical and bitwise NOT (no `~` operator) |
-| `operator&`, `\|`, `^` | `BitAnd`, `BitOr`, `BitXor` | |
-| `operator<<`, `>>` (shift) | `Shl`, `Shr` | NOT stream I/O! |
-| `operator+=` | `std::ops::AddAssign` | Takes `&mut self` (not `self`) |
-| `operator[]` | `std::ops::Index` / `IndexMut` | Returns `&Output` / `&mut Output` |
-| `operator()` | `Fn` / `FnMut` / `FnOnce` | Closures implement these; you cannot `impl Fn` directly |
-| `operator==` | `PartialEq` (+ `Eq`) | In `std::cmp`, not `std::ops` |
-| `operator<` | `PartialOrd` (+ `Ord`) | In `std::cmp` |
-| `operator<<` (stream) | `fmt::Display` | `println!("{}", x)` |
-| `operator<<` (debug) | `fmt::Debug` | `println!("{:?}", x)` |
-| `operator bool` | No direct equivalent | Use `impl From<T> for bool` or a named method like `.is_empty()` |
-| `operator T()` (implicit conversion) | No implicit conversions | Use `From`/`Into` traits (explicit) |
+| `operator-`（一元） | `std::ops::Neg` | |
+| `operator!` / `operator~` | `std::ops::Not` | Rust 使用 `!` 表示逻辑和按位 NOT（无 `~` 运算符） |
+| `operator&`、`\|`、`^` | `BitAnd`、`BitOr`、`BitXor` | |
+| `operator<<`、`>>`（移位） | `Shl`、`Shr` | 不是流 I/O！ |
+| `operator+=` | `std::ops::AddAssign` | 采用 `&mut self`（不是 `self`） |
+| `operator[]` | `std::ops::Index` / `IndexMut` | 返回 `&Output` / `&mut Output` |
+| `operator()` | `Fn` / `FnMut` / `FnOnce` | 闭包实现这些；你不能直接 `impl Fn` |
+| `operator==` | `PartialEq`（+ `Eq`） | 在 `std::cmp` 中，不在 `std::ops` |
+| `operator<` | `PartialOrd`（+ `Ord`） | 在 `std::cmp` 中 |
+| `operator<<`（流） | `fmt::Display` | `println!("{}", x)` |
+| `operator<<`（调试） | `fmt::Debug` | `println!("{:?}", x)` |
+| `operator bool` | 无直接等价物 | 使用 `impl From<T> for bool` 或命名方法如 `.is_empty()` |
+| `operator T()`（隐式转换） | 无隐式转换 | 使用 `From`/`Into` traits（显式） |
 
-#### Guardrails: what Rust prevents
+#### 防护栏：Rust 防止什么
 
-1. **No implicit conversions**: C++ `operator int()` can cause silent, surprising casts. Rust has no implicit conversion operators — use `From`/`Into` and call `.into()` explicitly.
-2. **No overloading `&&` / `||`**: C++ allows it (breaking short-circuit semantics!). Rust does not.
-3. **No overloading `=`**: Assignment is always a move or copy, never user-defined. Compound assignment (`+=`) IS overloadable via `AddAssign`, etc.
-4. **No overloading `,`**: C++ allows `operator,()` — one of the most infamous C++ footguns. Rust does not.
-5. **No overloading `&` (address-of)**: Another C++ footgun (`std::addressof` exists to work around it). Rust's `&` always means "borrow."
-6. **Coherence rules**: You can only implement `Add<Foreign>` for your own type, or `Add<YourType>` for a foreign type — never `Add<Foreign>` for `Foreign`. This prevents conflicting operator definitions across crates.
+1. **无隐式转换**：C++ `operator int()` 可能导致静默、惊人的转换。Rust 没有隐式转换运算符 —— 使用 `From`/`Into` 并显式调用 `.into()`。
+2. **无重载 `&&` / `||`**：C++ 允许它（破坏短路语义！）。Rust 不允许。
+3. **无重载 `=`**：赋值总是移动或复制，从不用户定义。复合赋值（`+=`）可通过 `AddAssign` 等重载。
+4. **无重载 `,`**：C++ 允许 `operator,()` —— 最臭名昭著的 C++ 陷阱之一。Rust 不允许。
+5. **无重载 `&`（取地址）**：另一个 C++ 陷阱（`std::addressof` 存在以解决它）。Rust 的 `&` 总是表示"借用"。
+6. **相干规则**：你只能为自己的类型实现 `Add<Foreign>`，或为外部类型实现 `Add<YourType>` —— 从不为 `Foreign` 实现 `Add<Foreign>`。这防止跨 crate 的冲突运算符定义。
 
-> **Bottom line**: In C++, operator overloading is powerful but largely unregulated — you can overload almost anything, including comma and address-of, and implicit conversions can trigger silently. Rust gives you the same expressiveness for arithmetic and comparison operators via traits, but **blocks the historically dangerous overloads** and forces all conversions to be explicit.
+> **底线**：在 C++ 中，运算符重载强大但基本不受监管 —— 你可以重载几乎所有内容，包括逗号和取地址，隐式转换可能静默触发。Rust 通过 traits 为你提供与 C++ 相同的算术和比较运算符表现力，但**阻止历史上危险的重载**并强制所有转换显式。
 
 ----
 # Rust traits
-- Rust allows implementing a user defined trait on even built-in types like u32 in this example. However, either the trait or the type must belong to the crate
+- Rust 允许在内置类型（如本示例中的 u32）上实现用户定义的 trait。但是，trait 或类型必须属于 crate
 ```rust
 trait IsSecret {
   fn is_secret(&self);
 }
-// The IsSecret trait belongs to the crate, so we are OK
+// IsSecret trait 属于 crate，所以我们 OK
 impl IsSecret for u32 {
   fn is_secret(&self) {
       if *self == 42 {
-          println!("Is secret of life");
+          println!("是生命之谜");
       }
   }
 }
@@ -288,23 +288,23 @@ fn main() {
 
 
 # Rust traits
-- Traits support interface inheritance and default implementations
+- Traits 支持接口继承和默认实现
 ```rust
 trait Animal {
-  // Default implementation
+  // 默认实现
   fn is_mammal(&self) -> bool {
     true
   }
 }
 trait Feline : Animal {
-  // Default implementation
+  // 默认实现
   fn is_feline(&self) -> bool {
     true
   }
 }
 
 struct Cat;
-// Use default implementations. Note that all traits for the supertrait must be individually implemented
+// 使用默认实现。注意必须单独实现超 trait 的所有 traits
 impl Feline for Cat {}
 impl Animal for Cat {}
 fn main() {
@@ -313,14 +313,14 @@ fn main() {
 }
 ```
 ----
-# Exercise: Logger trait implementation
+# 练习：Logger trait 实现
 
-🟡 **Intermediate**
+🟡 **中级**
 
-- Implement a ```Log trait``` with a single method called log() that accepts a u64
-    - Implement two different loggers ```SimpleLogger``` and ```ComplexLogger``` that implement the ```Log trait```. One should output "Simple logger" with the ```u64``` and the other should output "Complex logger" with the ```u64``` 
+- 实现一个 ```Log trait```，带单个名为 log() 的方法，接受 u64
+    - 实现两个不同的日志记录器 ```SimpleLogger``` 和 ```ComplexLogger``` 实现 ```Log trait```。一个应该输出 "Simple logger" 带 ```u64```，另一个应该输出 "Complex logger" 带 ```u64```
 
-<details><summary>Solution (click to expand)</summary>
+<details><summary>答案（点击展开）</summary>
 
 ```rust
 trait Log {
@@ -348,7 +348,7 @@ fn main() {
     simple.log(42);
     complex.log(42);
 }
-// Output:
+// 输出：
 // Simple logger: 42
 // Complex logger: 42 (hex: 0x2a, binary: 101010)
 ```
@@ -356,7 +356,7 @@ fn main() {
 </details>
 
 ----
-# Rust trait associated types
+# Rust trait 关联类型
 ```rust
 #[derive(Debug)]
 struct Small(u32);
@@ -379,8 +379,8 @@ fn main() {
 }
 ```
 
-# Rust trait impl
-- ```impl``` can be used with traits to accept any type that implements a trait
+# Rust trait 实现
+- ```impl``` 可与 traits 一起使用以接受任何实现 trait 的类型
 ```rust
 trait Pet {
     fn speak(&self);
@@ -404,8 +404,8 @@ fn main() {
 }
 ```
 
-# Rust trait impl
-- ```impl``` can be also be used be used in a return value
+# Rust trait 实现
+- ```impl``` 也可用于返回值
 ```rust
 trait Pet {}
 struct Dog;
@@ -426,8 +426,8 @@ fn main() {
 }
 ```
 ----
-# Rust dynamic traits
-- Dynamic traits can be used to invoke the trait functionality without knowing the underlying type. This is known as ```type erasure``` 
+# Rust 动态 traits
+- 动态 traits 可用于调用 trait 功能而无需知道底层类型。这称为 ```类型擦除```
 ```rust
 trait Pet {
     fn speak(&self);
@@ -452,15 +452,15 @@ fn main() {
 ```
 ----
 
-## Choosing Between `impl Trait`, `dyn Trait`, and Enums
+## 在 `impl Trait`、`dyn Trait` 和 Enums 之间选择
 
-These three approaches all achieve polymorphism but with different trade-offs:
+这三种方法都实现多态性，但具有不同的权衡：
 
-| Approach | Dispatch | Performance | Heterogeneous collections? | When to use |
+| 方法 | 派 | 性能 | 异构集合？ | 何时使用 |
 |----------|----------|-------------|---------------------------|-------------|
-| `impl Trait` / generics | Static (monomorphized) | Zero-cost — inlined at compile time | No — each slot has one concrete type | Default choice. Function arguments, return types |
-| `dyn Trait` | Dynamic (vtable) | Small overhead per call (~1 pointer indirection) | Yes — `Vec<Box<dyn Trait>>` | When you need mixed types in a collection, or plugin-style extensibility |
-| `enum` | Match | Zero-cost — known variants at compile time | Yes — but only known variants | When the set of variants is **closed** and known at compile time |
+| `impl Trait` / 泛型 | 静态（单态化） | 零成本 —— 编译时内联 | 否 —— 每个槽位有一个具体类型 | 默认选择。函数参数、返回类型 |
+| `dyn Trait` | 动态（vtable） | 小开销每次调用（~1 指针间接） | 是 —— `Vec<Box<dyn Trait>>` | 当你需要在集合中混合类型，或插件式可扩展性 |
+| `enum` | Match | 零成本 —— 编译时已知变体 | 是 —— 但仅已知变体 | 当变体集合**封闭**且编译时已知 |
 
 ```rust
 trait Shape {
@@ -471,13 +471,13 @@ struct Rect { w: f64, h: f64 }
 impl Shape for Circle { fn area(&self) -> f64 { std::f64::consts::PI * self.radius * self.radius } }
 impl Shape for Rect   { fn area(&self) -> f64 { self.w * self.h } }
 
-// Static dispatch — compiler generates separate code for each type
+// 静态派 —— 编译器为每个类型生成单独的代码
 fn print_area(s: &impl Shape) { println!("{}", s.area()); }
 
-// Dynamic dispatch — one function, works with any Shape behind a pointer
+// 动态派 —— 一个函数，适用于指针后面的任何 Shape
 fn print_area_dyn(s: &dyn Shape) { println!("{}", s.area()); }
 
-// Enum — closed set, no trait needed
+// Enum —— 封闭集合，不需要 trait
 enum ShapeEnum { Circle(f64), Rect(f64, f64) }
 impl ShapeEnum {
     fn area(&self) -> f64 {
@@ -489,7 +489,7 @@ impl ShapeEnum {
 }
 ```
 
-> **For C++ developers:** `impl Trait` is like C++ templates (monomorphized, zero-cost). `dyn Trait` is like C++ virtual functions (vtable dispatch). Rust enums with `match` are like `std::variant` with `std::visit` — but exhaustive matching is enforced by the compiler.
+> **对于 C++ 开发者：** `impl Trait` 像 C++ 模板（单态化，零成本）。`dyn Trait` 像 C++ 虚函数（vtable 派）。带 `match` 的 Rust enums 像带 `std::visit` 的 `std::variant` —— 但穷尽匹配由编译器强制执行。
 
-> **Rule of thumb**: Start with `impl Trait` (static dispatch). Reach for `dyn Trait` only when you need heterogeneous collections or can't know the concrete type at compile time. Use `enum` when you own all the variants.
+> **经验法则**：从 `impl Trait`（静态派）开始。仅当你需要异构集合或无法在编译时知道具体类型时才使用 `dyn Trait`。当你拥有所有变体时使用 `enum`。
 

@@ -1,37 +1,37 @@
 # 4. Pin and Unpin 🔴
 
-> **What you'll learn:**
-> - Why self-referential structs break when moved in memory
-> - What `Pin<P>` guarantees and how it prevents moves
-> - The three practical pinning patterns: `Box::pin()`, `tokio::pin!()`, `Pin::new()`
-> - When `Unpin` gives you an escape hatch
+> **你将学到什么：**
+> - 为什么自引用结构体在内存中移动时会损坏
+> - `Pin<P>` 保证什么以及它如何防止移动
+> - 三个实用的 pinning 模式：`Box::pin()`、`tokio::pin!()`、`Pin::new()`
+> - 何时 `Unpin` 给你提供一个出口
 
-## Why Pin Exists
+## 为什么存在 Pin
 
-This is the most confusing concept in async Rust. Let's build the intuition step by step.
+这是异步 Rust 中最令人困惑的概念。让我们逐步建立直觉。
 
-### The Problem: Self-Referential Structs
+### 问题：自引用结构体
 
-When the compiler transforms an `async fn` into a state machine, that state machine may contain references to its own fields. This creates a *self-referential struct* — and moving it in memory would invalidate those internal references.
+当编译器将 `async fn` 转换为状态机时，该状态机可能包含对其自身字段的引用。这创建了*自引用结构体* —— 在内存中移动它会使这些内部引用失效。
 
 ```rust
-// What the compiler generates (simplified) for:
+// 编译器生成的内容（简化）：
 // async fn example() {
 //     let data = vec![1, 2, 3];
-//     let reference = &data;       // Points to data above
+//     let reference = &data;       // 引用上面的 data
 //     use_ref(reference).await;
 // }
 
-// Becomes something like:
+// 变成类似：
 enum ExampleStateMachine {
     State0 {
         data: Vec<i32>,
-        // reference: &Vec<i32>,  // PROBLEM: points to `data` above
-        //                        // If this struct moves, the pointer is dangling!
+        // reference: &Vec<i32>,  // 问题：指向上面的 `data`
+        //                        // 如果这个结构体移动，指针就悬垂了！
     },
     State1 {
         data: Vec<i32>,
-        reference: *const Vec<i32>, // Internal pointer to data field
+        reference: *const Vec<i32>, // 指向 data 字段的内部指针
     },
     Complete,
 }
@@ -39,16 +39,16 @@ enum ExampleStateMachine {
 
 ```mermaid
 graph LR
-    subgraph "Before Move (Valid)"
-        A["data: [1,2,3]<br/>at addr 0x1000"]
-        B["reference: 0x1000<br/>(points to data)"]
-        B -->|"valid"| A
+    subgraph "移动之前（有效）"
+        A["data: [1,2,3]<br/>地址 0x1000"]
+        B["reference: 0x1000<br/>（指向 data）"]
+        B -->|"有效"| A
     end
 
-    subgraph "After Move (INVALID)"
-        C["data: [1,2,3]<br/>at addr 0x2000"]
-        D["reference: 0x1000<br/>(still points to OLD location!)"]
-        D -->|"dangling!"| E["💥 0x1000<br/>(freed/garbage)"]
+    subgraph "移动之后（无效）"
+        C["data: [1,2,3]<br/>地址 0x2000"]
+        D["reference: 0x1000<br/>（仍然指向旧位置！）"]
+        D -->|"悬垂！"| E["💥 0x1000<br/>（已释放/垃圾）"]
     end
 
     style E fill:#ffcdd2,color:#000
@@ -56,141 +56,139 @@ graph LR
     style B fill:#c8e6c9,color:#000
 ```
 
-### Self-Referential Structs
+### 自引用结构体
 
-This isn't an academic concern. Every `async fn` that holds a reference across an `.await` point creates a self-referential state machine:
+这不是一个学术问题。每个 `.await` 点持有引用的 `async fn` 都会创建一个自引用状态机：
 
 ```rust
 async fn problematic() {
     let data = String::from("hello");
-    let slice = &data[..]; // slice borrows data
+    let slice = &data[..]; // slice 借用 data
     
-    some_io().await; // <-- .await point: state machine stores both data AND slice
+    some_io().await; // <-- .await 点：状态机存储 data 和 slice
     
-    println!("{slice}"); // uses the reference after await
+    println!("{slice}"); // await 后使用引用
 }
-// The generated state machine has `data: String` and `slice: &str`
-// where slice points INTO data. Moving the state machine = dangling pointer.
+// 生成的状态机有 `data: String` 和 `slice: &str`
+// slice 指向 data 内部。移动状态机 = 悬垂指针。
 ```
 
-### Pin in Practice
+### 实践中的 Pin
 
-`Pin<P>` is a wrapper that prevents moving the value behind the pointer:
+`Pin<P>` 是一个包装器，防止指针背后的值被移动：
 
 ```rust
 use std::pin::Pin;
 
 let mut data = String::from("hello");
 
-// Pin it — now it can't be moved
+// Pin 它 —— 现在它不能被移动
 let pinned: Pin<&mut String> = Pin::new(&mut data);
 
-// Can still use it:
+// 仍然可以使用它：
 println!("{}", pinned.as_ref().get_ref()); // "hello"
 
-// But we can't get &mut String back (which would allow mem::swap):
-// let mutable: &mut String = Pin::into_inner(pinned); // Only if String: Unpin
-// String IS Unpin, so this actually works for String.
-// But for self-referential state machines (which are !Unpin), it's blocked.
+// 但我们不能取回 &mut String（这将允许 mem::swap）：
+// let mutable: &mut String = Pin::into_inner(pinned); // 仅当 String: Unpin
+// String 是 Unpin，所以这实际上对 String 有效。
+// 但对于自引用状态机（它们是 !Unpin），它被阻止。
 ```
 
-In real code, you mostly encounter Pin in three places:
+在真实代码中，你主要在三个地方遇到 Pin：
 
 ```rust
-// 1. poll() signature — all futures are polled through Pin
+// 1. poll() 签名 —— 所有 futures 都通过 Pin 轮询
 fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Output>;
 
-// 2. Box::pin() — heap-allocate and pin a future
+// 2. Box::pin() —— 堆分配并 pin 一个 future
 let future: Pin<Box<dyn Future<Output = i32>>> = Box::pin(async { 42 });
 
-// 3. tokio::pin!() — pin a future on the stack
+// 3. tokio::pin!() —— 在栈上 pin 一个 future
 tokio::pin!(my_future);
-// Now my_future: Pin<&mut impl Future>
+// 现在 my_future: Pin<&mut impl Future>
 ```
 
-### The Unpin Escape Hatch
+### Unpin 出口
 
-Most types in Rust are `Unpin` — they don't contain self-references, so pinning is a no-op. Only compiler-generated state machines (from `async fn`) are `!Unpin`.
+Rust 中的大多数类型是 `Unpin` —— 它们不包含自引用，所以 pinning 是一个无操作。只有编译器生成的状态机（来自 `async fn`）是 `!Unpin`。
 
 ```rust
-// These are all Unpin — pinning them does nothing special:
-// i32, String, Vec<T>, HashMap<K,V>, Box<T>, &T, &mut T
+// 这些都是 Unpin —— pin 它们没有什么特别的：
+// i32、String、Vec<T>、HashMap<K,V>、Box<T>、&T、&mut T
 
-// These are !Unpin — they MUST be pinned before polling:
-// The state machines generated by `async fn` and `async {}`
+// 这些是 !Unpin —— 它们在被轮询之前必须被 pin：
+// `async fn` 和 `async {}` 生成的状态机
 
-// Practical implication:
-// If you write a Future by hand and it has NO self-references,
-// implement Unpin to make it easier to work with:
-impl Unpin for MySimpleFuture {} // "I'm safe to move, trust me"
+// 实际含义：
+// 如果你手写一个 Future 且没有自引用，
+// 实现 Unpin 使其更容易使用：
+impl Unpin for MySimpleFuture {} // "我可以安全移动，相信我"
 ```
 
-### Quick Reference
+### 快速参考
 
-| What | When | How |
+| 什么 | 何时 | 如何 |
 |------|------|-----|
-| Pin a future on the heap | Storing in a collection, returning from function | `Box::pin(future)` |
-| Pin a future on the stack | Local use in `select!` or manual polling | `tokio::pin!(future)` or `pin_mut!` from `pin-utils` |
-| Pin in function signature | Accepting pinned futures | `future: Pin<&mut F>` |
-| Require Unpin | When you need to move a future after creation | `F: Future + Unpin` |
+| 在堆上 pin 一个 future | 存储在集合中，从函数返回 | `Box::pin(future)` |
+| 在栈上 pin 一个 future | 在 `select!` 或手动轮询中本地使用 | `tokio::pin!(future)` 或 `pin_utils` 的 `pin_mut!` |
+| 在函数签名中 Pin | 接受 pinned futures | `future: Pin<&mut F>` |
+| 要求 Unpin | 当你需要在创建后移动 future | `F: Future + Unpin` |
 
 <details>
-<summary><strong>🏋️ Exercise: Pin and Move</strong> (click to expand)</summary>
+<summary><strong>🏋️ 练习：Pin 和移动</strong>（点击展开）</summary>
 
-**Challenge**: Which of these code snippets compile? For each one that doesn't, explain why and fix it.
+**挑战**：以下哪些代码片段可以编译？对于每个不能编译的，解释原因并修复它。
 
 ```rust
-// Snippet A
+// 片段 A
 let fut = async { 42 };
 let pinned = Box::pin(fut);
-let moved = pinned; // Move the Box
+let moved = pinned; // 移动 Box
 let result = moved.await;
 
-// Snippet B
+// 片段 B
 let fut = async { 42 };
 tokio::pin!(fut);
-let moved = fut; // Move the pinned future
+let moved = fut; // 移动 pinned future
 let result = moved.await;
 
-// Snippet C
+// 片段 C
 use std::pin::Pin;
 let mut fut = async { 42 };
 let pinned = Pin::new(&mut fut);
 ```
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 答案</summary>
 
-**Snippet A**: ✅ **Compiles.** `Box::pin()` puts the future on the heap. Moving the `Box` moves the *pointer*, not the future itself. The future stays pinned in its heap location.
+**片段 A**：✅ **能编译。** `Box::pin()` 将 future 放在堆上。移动 `Box` 移动的是*指针*，而不是 future 本身。future 保持在其堆位置被 pin。
 
-**Snippet B**: ✅ **Compiles.** `tokio::pin!` pins the future to the stack and rebinds `fut` as `Pin<&mut ...>`. `let moved = fut` moves the **`Pin` wrapper** (a pointer), not the underlying future — the future stays pinned on the stack. This is just like `Box::pin`: moving the `Box` doesn't move the heap allocation. However, `fut` is consumed by the move, so you can't use `fut` afterwards — only `moved`:
+**片段 B**：✅ **能编译。** `tokio::pin!` 将 future pin 到栈上并将 `fut` 重新绑定为 `Pin<&mut ...>`。`let moved = fut` 移动的是 **`Pin` 包装器**（一个指针），而不是底层的 future —— future 保持被 pin 在栈上。这就像 `Box::pin`：移动 `Box` 不会移动堆分配。但是，`fut` 被移动消耗了，所以你不能在之后使用 `fut` —— 只能使用 `moved`：
 ```rust
 let fut = async { 42 };
 tokio::pin!(fut);
-let moved = fut;        // Moves the Pin<&mut> wrapper — OK
-// fut.await;           // ❌ Error: fut was moved
-let result = moved.await; // ✅ Use moved instead
+let moved = fut;        // 移动 Pin<&mut> 包装器 —— 可以
+// fut.await;           // ❌ 错误：fut 被移动了
+let result = moved.await; // ✅ 使用 moved 代替
 ```
 
-**Snippet C**: ❌ **Does not compile.** `Pin::new()` requires `T: Unpin`. Async blocks generate `!Unpin` types. **Fix**: Use `Box::pin()` or `unsafe Pin::new_unchecked()`:
+**片段 C**：❌ **不能编译。** `Pin::new()` 要求 `T: Unpin`。异步块生成 `!Unpin` 类型。**修复**：使用 `Box::pin()` 或 `unsafe Pin::new_unchecked()`：
 ```rust
 let fut = async { 42 };
-let pinned = Box::pin(fut); // Heap-pin — works with !Unpin
+let pinned = Box::pin(fut); // 堆 pin —— 适用于 !Unpin
 ```
 
-**Key takeaway**: `Box::pin()` is the safe, easy way to pin `!Unpin` futures. `tokio::pin!()` pins on the stack — you can move the `Pin<&mut>` wrapper (it's just a pointer), but the underlying future stays put. `Pin::new()` only works with `Unpin` types.
+**关键要点**：`Box::pin()` 是安全、简单的方法来 pin `!Unpin` futures。`tokio::pin!()` 在栈上 pin —— 你可以移动 `Pin<&mut>` 包装器（它只是一个指针），但底层的 future 保持不动。`Pin::new()` 仅适用于 `Unpin` 类型。
 
 </details>
 </details>
 
-> **Key Takeaways — Pin and Unpin**
-> - `Pin<P>` is a wrapper that **prevents the pointee from being moved** — essential for self-referential state machines
-> - `Box::pin()` is the safe, easy default for pinning futures on the heap
-> - `tokio::pin!()` pins on the stack — you can move the `Pin<&mut>` wrapper, but the underlying future stays put
-> - `Unpin` is an auto-trait opt-out: types that implement `Unpin` can be moved even when pinned (most types are `Unpin`; async blocks are not)
+> **关键要点 —— Pin and Unpin**
+> - `Pin<P>` 是一个包装器，**防止被指向的值被移动** —— 对自引用状态机至关重要
+> - `Box::pin()` 是在堆上 pin futures 的安全、简单默认方法
+> - `tokio::pin!()` 在栈上 pin —— 你可以移动 `Pin<&mut>` 包装器，但底层的 future 保持不动
+> - `Unpin` 是一个自动 trait opt-out：实现 `Unpin` 的类型即使在被 pin 时也可以移动（大多数类型是 `Unpin`；异步块不是）
 
-> **See also:** [Ch 2 — The Future Trait](ch02-the-future-trait.md) for `Pin<&mut Self>` in poll, [Ch 5 — The State Machine Reveal](ch05-the-state-machine-reveal.md) for why async state machines are self-referential
+> **另见：**[第 2 章 — The Future Trait](ch02-the-future-trait.md) 了解 `Pin<&mut Self>` 在 poll 中，[第 5 章 — The State Machine Reveal](ch05-the-state-machine-reveal.md) 了解为什么异步状态机是自引用的
 
 ***
-
-

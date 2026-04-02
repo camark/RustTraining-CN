@@ -1,119 +1,118 @@
-# Reference Card
+# 参考卡片
 
-> **Quick-reference for all 14+ correct-by-construction patterns** with selection flowchart, pattern catalogue, composition rules, crate mapping, and types-as-guarantees cheat sheet.
+> **14+ 种正确构造模式的快速参考**，包含选择流程图、模式目录、组合规则、crate 映射和类型即保证速查表。
 >
-> **Cross-references:** Every chapter — this is the lookup table for the entire book.
+> **交叉引用**：每一章 —— 这是整本书的查找表。
 
-## Quick Reference: Correct-by-Construction Patterns
+## 快速参考：正确构造模式
 
-### Pattern Selection Guide
+### 模式选择指南
 
 ```text
-Is the bug catastrophic if missed?
-├── Yes → Can it be encoded in types?
-│         ├── Yes → USE CORRECT-BY-CONSTRUCTION
-│         └── No  → Runtime check + extensive testing
-└── No  → Runtime check is fine
+bug 被遗漏时是否是灾难性的？
+├── 是 → 能否编码到类型中？
+│         ├── 是 → 使用正确构造
+│         └── 否 → 运行时检查 + 广泛测试
+└── 否 → 运行时检查就可以
 ```
 
-### Pattern Catalogue
+### 模式目录
 
-| # | Pattern | Key Trait/Type | Prevents | Runtime Cost | Chapter |
+| # | 模式 | 关键 Trait/类型 | 防止 | 运行时开销 | 章节 |
 |---|---------|---------------|----------|:------:|---------|
-| 1 | Typed Commands | `trait IpmiCmd { type Response; }` | Wrong response type | Zero | ch02 |
-| 2 | Single-Use Types | `struct Nonce` (not Clone/Copy) | Nonce/key reuse | Zero | ch03 |
-| 3 | Capability Tokens | `struct AdminToken { _private: () }` | Unauthorised access | Zero | ch04 |
-| 4 | Type-State | `Session<Active>` | Protocol violations | Zero | ch05 |
-| 5 | Dimensional Types | `struct Celsius(f64)` | Unit confusion | Zero | ch06 |
-| 6 | Validated Boundaries | `struct ValidFru` (via TryFrom) | Unvalidated data use | Parse once | ch07 |
-| 7 | Capability Mixins | `trait FanDiagMixin: HasSpi + HasI2c` | Missing bus access | Zero | ch08 |
-| 8 | Phantom Types | `Register<Width16>` | Width/direction mismatch | Zero | ch09 |
-| 9 | Sentinel → Option | `Option<u8>` (not `0xFF`) | Sentinel-as-value bugs | Zero | ch11 |
-| 10 | Sealed Traits | `trait Cmd: private::Sealed` | Unsound external impls | Zero | ch11 |
-| 11 | Non-Exhaustive Enums | `#[non_exhaustive] enum Sku` | Silent match fallthrough | Zero | ch11 |
-| 12 | Typestate Builder | `DerBuilder<Set, Missing>` | Incomplete construction | Zero | ch11 |
-| 13 | FromStr Validation | `impl FromStr for DiagLevel` | Unvalidated string input | Parse once | ch11 |
-| 14 | Const-Generic Size | `RegisterBank<const N: usize>` | Buffer size mismatch | Zero | ch11 |
-| 15 | Safe `unsafe` Wrapper | `MmioRegion::read_u32()` | Unchecked MMIO/FFI | Zero | ch11 |
-| 16 | Async Type-State | `AsyncSession<Active>` | Async protocol violations | Zero | ch11 |
-| 17 | Const Assertions | `SdrSensorId<const N: u8>` | Invalid compile-time IDs | Zero | ch11 |
-| 18 | Session Types | `Chan<SendRequest>` | Out-of-order channel ops | Zero | ch11 |
-| 19 | Pin Self-Referential | `Pin<Box<StreamParser>>` | Dangling intra-struct pointer | Zero | ch11 |
-| 20 | RAII / Drop | `impl Drop for Session` | Resource leak on any exit path | Zero | ch11 |
-| 21 | Error Type Hierarchy | `#[derive(Error)] enum DiagError` | Silent error swallowing | Zero | ch11 |
-| 22 | `#[must_use]` | `#[must_use] struct Token` | Silently dropped values | Zero | ch11 |
+| 1 | 类型化命令 | `trait IpmiCmd { type Response; }` | 错误的响应类型 | 零 | ch02 |
+| 2 | 一次性类型 | `struct Nonce`（非 Clone/Copy） | Nonce/密钥重用 | 零 | ch03 |
+| 3 | 能力令牌 | `struct AdminToken { _private: () }` | 未授权访问 | 零 | ch04 |
+| 4 | Type-state | `Session<Active>` | 协议违规 | 零 | ch05 |
+| 5 | 量纲类型 | `struct Celsius(f64)` | 单位混淆 | 零 | ch06 |
+| 6 | 验证边界 | `struct ValidFru`（通过 TryFrom） | 使用未验证数据 | 解析一次 | ch07 |
+| 7 | 能力 Mixins | `trait FanDiagMixin: HasSpi + HasI2c` | 缺少总线访问 | 零 | ch08 |
+| 8 | Phantom 类型 | `Register<Width16>` | 宽度/方向不匹配 | 零 | ch09 |
+| 9 | Sentinel → Option | `Option<u8>`（非 `0xFF`） | Sentinel 作为值的 bug | 零 | ch11 |
+| 10 | 密封 Trait | `trait Cmd: private::Sealed` | 不健全的外部 impl | 零 | ch11 |
+| 11 | 非穷举 Enums | `#[non_exhaustive] enum Sku` | 静默 match fallthrough | 零 | ch11 |
+| 12 | Typestate Builder | `DerBuilder<Set, Missing>` | 不完整构造 | 零 | ch11 |
+| 13 | FromStr 验证 | `impl FromStr for DiagLevel` | 未验证的字符串输入 | 解析一次 | ch11 |
+| 14 | Const 泛型大小 | `RegisterBank<const N: usize>` | 缓冲区大小不匹配 | 零 | ch11 |
+| 15 | 安全 `unsafe` 包装 | `MmioRegion::read_u32()` | 未检查的 MMIO/FFI | 零 | ch11 |
+| 16 | 异步 Type-state | `AsyncSession<Active>` | 异步协议违规 | 零 | ch11 |
+| 17 | Const 断言 | `SdrSensorId<const N: u8>` | 无效的编译时 ID | 零 | ch11 |
+| 18 | 会话类型 | `Chan<SendRequest>` | 无序通道操作 | 零 | ch11 |
+| 19 | Pin 自引用 | `Pin<Box<StreamParser>>` | 悬垂结构内指针 | 零 | ch11 |
+| 20 | RAII / Drop | `impl Drop for Session` | 任何退出路径上的资源泄漏 | 零 | ch11 |
+| 21 | 错误类型层次 | `#[derive(Error)] enum DiagError` | 静默错误吞没 | 零 | ch11 |
+| 22 | `#[must_use]` | `#[must_use] struct Token` | 被静默丢弃的值 | 零 | ch11 |
 
-### Composition Rules
+### 组合规则
 
 ```text
-Capability Token + Type-State = Authorised state transitions
-Typed Command + Dimensional Type = Physically-typed responses
-Validated Boundary + Phantom Type = Typed register access on validated config
-Capability Mixin + Typed Command = Bus-aware typed operations
-Single-Use Type + Type-State = Consume-on-transition protocols
-Sealed Trait + Typed Command = Closed, sound command set
-Sentinel → Option + Validated Boundary = Clean parse-once pipeline
-Typestate Builder + Capability Token = Proof-of-complete construction
-FromStr + #[non_exhaustive] = Evolvable, fail-fast enum parsing
-Const-Generic Size + Validated Boundary = Sized, validated protocol buffers
-Safe unsafe Wrapper + Phantom Type = Typed, safe MMIO access
-Async Type-State + Capability Token = Authorised async transitions
-Session Types + Typed Command = Fully-typed request-response channels
-Pin + Type-State = Self-referential state machines that can't move
-RAII (Drop) + Type-State = State-dependent cleanup guarantees
-Error Hierarchy + Validated Boundary = Typed parse errors with exhaustive handling
-#[must_use] + Single-Use Type = Hard-to-ignore, hard-to-reuse tokens
+能力令牌 + Type-state = 授权的状态转换
+类型化命令 + 量纲类型 = 物理类型的响应
+验证边界 + Phantom 类型 = 验证配置上的类型化寄存器访问
+能力 Mixin + 类型化命令 = 感知总线的类型化操作
+一次性类型 + Type-state = 消耗即转换协议
+密封 Trait + 类型化命令 = 封闭、健全的命令集
+Sentinel → Option + 验证边界 = 干净的单次解析流水线
+Typestate Builder + 能力令牌 = 完整构造的证明
+FromStr + #[non_exhaustive] = 可演进、快速失败的 enum 解析
+Const 泛型大小 + 验证边界 = 定长、验证的协议缓冲区
+安全 unsafe 包装 + Phantom 类型 = 类型化、安全的 MMIO 访问
+异步 Type-state + 能力令牌 = 授权的异步转换
+会话类型 + 类型化命令 = 完全类型的请求 - 响应通道
+Pin + Type-state = 无法移动的自引用状态机
+RAII (Drop) + Type-state = 状态依赖的清理保证
+错误层次 + 验证边界 = 类型化解析错误，穷尽处理
+#[must_use] + 一次性类型 = 难以忽略、难以重用的令牌
 ```
 
-### Anti-Patterns to Avoid
+### 要避免的反模式
 
-| Anti-Pattern | Why It's Wrong | Correct Alternative |
+| 反模式 | 为什么错误 | 正确的替代方案 |
 |-------------|---------------|-------------------|
-| `fn read_sensor() -> f64` | Unitless — could be °C, °F, or RPM | `fn read_sensor() -> Celsius` |
-| `fn encrypt(nonce: &[u8; 12])` | Nonce can be reused (borrow) | `fn encrypt(nonce: Nonce)` (move) |
-| `fn admin_op(is_admin: bool)` | Caller can lie (`true`) | `fn admin_op(_: &AdminToken)` |
-| `fn send(session: &Session)` | No state guarantee | `fn send(session: &Session<Active>)` |
-| `fn process(data: &[u8])` | Not validated | `fn process(data: &ValidFru)` |
-| `Clone` on ephemeral keys | Defeats single-use guarantee | Don't derive Clone |
-| `let vendor_id: u16 = 0xFFFF` | Sentinel carried internally | `let vendor_id: Option<u16> = None` |
-| `fn route(level: &str)` with fallback | Typos silently default | `let level: DiagLevel = s.parse()?` |
-| `Builder::new().finish()` without fields | Incomplete object constructed | Typestate builder: `finish()` gated on `Set` |
-| `let buf: Vec<u8>` for fixed-size HW buffer | Size only checked at runtime | `RegisterBank<4096>` (const generic) |
-| Raw `unsafe { ptr::read(...) }` scattered | UB risk, unauditable | `MmioRegion::read_u32()` safe wrapper |
-| `async fn transition(&mut self)` | Mutable borrows don't enforce state | `async fn transition(self) -> NextState` |
-| `fn cleanup()` called manually | Forgotten on early return / panic | `impl Drop` — compiler inserts call |
-| `fn op() -> Result<T, String>` | Opaque error, no variant matching | `fn op() -> Result<T, DiagError>` enum |
+| `fn read_sensor() -> f64` | 无单位 —— 可能是 °C、°F 或 RPM | `fn read_sensor() -> Celsius` |
+| `fn encrypt(nonce: &[u8; 12])` | Nonce 可重用（借用） | `fn encrypt(nonce: Nonce)`（move） |
+| `fn admin_op(is_admin: bool)` | 调用者可以说谎（`true`） | `fn admin_op(_: &AdminToken)` |
+| `fn send(session: &Session)` | 无状态保证 | `fn send(session: &Session<Active>)` |
+| `fn process(data: &[u8])` | 未验证 | `fn process(data: &ValidFru)` |
+| `Clone` 在临时密钥上 | 击败一次性保证 | 不派生 Clone |
+| `let vendor_id: u16 = 0xFFFF` | Sentinel 内部携带 | `let vendor_id: Option<u16> = None` |
+| `fn route(level: &str)` 带 fallback | 拼写错误静默默认 | `let level: DiagLevel = s.parse()?` |
+| `Builder::new().finish()` 无字段 | 构造了不完整对象 | Typestate builder：`finish()` 门控在 `Set` |
+| `let buf: Vec<u8>` 用于固定大小 HW 缓冲区 | 大小仅在运行时检查 | `RegisterBank<4096>`（const 泛型） |
+| 分散的原始 `unsafe { ptr::read(...) }` | UB 风险，不可审计 | `MmioRegion::read_u32()` 安全包装 |
+| `async fn transition(&mut self)` | 可变借用不强制执行状态 | `async fn transition(self) -> NextState` |
+| `fn cleanup()` 手动调用 | 早返回/panic 时遗忘 | `impl Drop` —— 编译器插入调用 |
+| `fn op() -> Result<T, String>` | 不透明错误，无变体匹配 | `fn op() -> Result<T, DiagError>` enum |
 
-### Mapping to a Diagnostics Codebase
+### 映射到诊断代码库
 
-| Module | Applicable Pattern(s) |
+| 模块 | 适用模式 |
 |---------------------|----------------------|
-| `protocol_lib` | Typed commands, type-state sessions |
-| `thermal_diag` | Capability mixins, dimensional types |
-| `accel_diag` | Validated boundaries, phantom registers |
-| `network_diag` | Type-state (link training), capability tokens |
-| `pci_topology` | Phantom types (register width), validated config, sentinel → Option |
-| `event_handler` | Single-use audit tokens, capability tokens, FromStr (Component) |
-| `event_log` | Validated boundaries (SEL record parsing) |
-| `compute_diag` | Dimensional types (temperature, frequency) |
-| `memory_diag` | Validated boundaries (SPD data), dimensional types |
-| `switch_diag` | Type-state (port enumeration), phantom types |
-| `config_loader` | FromStr (DiagLevel, FaultStatus, DiagAction) |
-| `log_analyzer` | Validated boundaries (CompiledPatterns) |
-| `diag_framework` | Typestate builder (DerBuilder), session types (orchestrator↔worker) |
-| `topology_lib` | Const-generic register banks, safe MMIO wrappers |
+| `protocol_lib` | 类型化命令、type-state 会话 |
+| `thermal_diag` | 能力 mixins、量纲类型 |
+| `accel_diag` | 验证边界、phantom 寄存器 |
+| `network_diag` | Type-state（链路训练）、能力令牌 |
+| `pci_topology` | Phantom 类型（寄存器宽度）、验证配置、sentinel → Option |
+| `event_handler` | 一次性审计令牌、能力令牌、FromStr（Component） |
+| `event_log` | 验证边界（SEL 记录解析） |
+| `compute_diag` | 量纲类型（温度、频率） |
+| `memory_diag` | 验证边界（SPD 数据）、量纲类型 |
+| `switch_diag` | Type-state（端口枚举）、phantom 类型 |
+| `config_loader` | FromStr（DiagLevel、FaultStatus、DiagAction） |
+| `log_analyzer` | 验证边界（CompiledPatterns） |
+| `diag_framework` | Typestate builder（DerBuilder）、会话类型（orchestrator↔worker） |
+| `topology_lib` | Const 泛型寄存器库、安全 MMIO 包装 |
 
-### Types as Guarantees — Quick Mapping
+### 类型即保证 —— 快速映射
 
-| Guarantee | Rust Equivalent | Example |
+| 保证 | Rust 等价物 | 示例 |
 |-----------|----------------|---------|
-| "This proof exists" | A type | `AdminToken` |
-| "I have the proof" | A value of that type | `let tok = authenticate()?;` |
-| "A implies B" | Function `fn(A) -> B` | `fn activate(AdminToken) -> Session<Active>` |
-| "Both A and B" | Tuple `(A, B)` or multi-param | `fn op(a: &AdminToken, b: &LinkTrained)` |
-| "Either A or B" | `enum { A(A), B(B) }` or `Result<A, B>` | `Result<Session<Active>, Error>` |
-| "Always true" | `()` (unit type) | Always constructible |
-| "Impossible" | `!` (never type) or `enum Void {}` | Can never be constructed |
+| "此证明存在" | 一个类型 | `AdminToken` |
+| "我有证明" | 该类型的值 | `let tok = authenticate()?;` |
+| "A 隐含 B" | 函数 `fn(A) -> B` | `fn activate(AdminToken) -> Session<Active>` |
+| "A 和 B 两者" | 元组 `(A, B)` 或多参数 | `fn op(a: &AdminToken, b: &LinkTrained)` |
+| "A 或 B" | `enum { A(A), B(B) }` 或 `Result<A, B>` | `Result<Session<Active>, Error>` |
+| "永远为真" | `()`（单元类型） | 总是可构造 |
+| "不可能" | `!`（never 类型）或 `enum Void {}` | 永远无法构造 |
 
 ---
-

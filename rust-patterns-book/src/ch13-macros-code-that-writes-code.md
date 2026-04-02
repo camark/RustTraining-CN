@@ -1,19 +1,19 @@
-# 13. Macros — Code That Writes Code 🟡
+# 13. 宏 —— 编写代码的代码 🟡
 
-> **What you'll learn:**
-> - Declarative macros (`macro_rules!`) with pattern matching and repetition
-> - When macros are the right tool vs generics/traits
-> - Procedural macros: derive, attribute, and function-like
-> - Writing a custom derive macro with `syn` and `quote`
+> **你将学到什么：**
+> - 带模式匹配和重复的声明式宏（`macro_rules!`）
+> - 何时宏是正确工具 vs 泛型/traits
+> - 过程宏：derive、属性和函数式
+> - 用 `syn` 和 `quote` 编写自定义 derive 宏
 
-## Declarative Macros (macro_rules!)
+## 声明式宏（macro_rules!）
 
-Macros match patterns on syntax and expand to code at compile time:
+宏在语法上匹配模式并在编译时展开为代码：
 
 ```rust
-// A simple macro that creates a HashMap
+// 一个创建 HashMap 的简单宏
 macro_rules! hashmap {
-    // Match: key => value pairs separated by commas
+    // 匹配：=> 键值对，逗号分隔
     ( $( $key:expr => $value:expr ),* $(,)? ) => {
         {
             let mut map = std::collections::HashMap::new();
@@ -28,7 +28,7 @@ let scores = hashmap! {
     "Bob" => 87,
     "Carol" => 92,
 };
-// Expands to:
+// 展开为：
 // let mut map = HashMap::new();
 // map.insert("Alice", 95);
 // map.insert("Bob", 87);
@@ -36,22 +36,22 @@ let scores = hashmap! {
 // map
 ```
 
-**Macro fragment types**:
+**宏片段类型**：
 
-| Fragment | Matches | Example |
+| 片段 | 匹配 | 示例 |
 |----------|---------|---------|
-| `$x:expr` | Any expression | `42`, `a + b`, `foo()` |
-| `$x:ty` | A type | `i32`, `Vec<String>` |
-| `$x:ident` | An identifier | `my_var`, `Config` |
-| `$x:pat` | A pattern | `Some(x)`, `_` |
-| `$x:stmt` | A statement | `let x = 5;` |
-| `$x:tt` | A single token tree | Anything (most flexible) |
-| `$x:literal` | A literal value | `42`, `"hello"`, `true` |
+| `$x:expr` | 任何表达式 | `42`、`a + b`、`foo()` |
+| `$x:ty` | 类型 | `i32`、`Vec<String>` |
+| `$x:ident` | 标识符 | `my_var`、`Config` |
+| `$x:pat` | 模式 | `Some(x)`、`_` |
+| `$x:stmt` | 语句 | `let x = 5;` |
+| `$x:tt` | 单个 token 树 | 任何（最灵活） |
+| `$x:literal` | 字面值 | `42`、`"hello"`、`true` |
 
-**Repetition**: `$( ... ),*` means "zero or more, comma-separated"
+**重复**：`$( ... ),*` 表示"零个或多个，逗号分隔"
 
 ```rust
-// Generate test functions automatically
+// 自动生成测试函数
 macro_rules! test_cases {
     ( $( $name:ident: $input:expr => $expected:expr ),* $(,)? ) => {
         $(
@@ -68,74 +68,74 @@ test_cases! {
     test_hello: "hello" => "HELLO",
     test_trim: "  spaces  " => "SPACES",
 }
-// Generates three separate #[test] functions
+// 生成三个单独的 #[test] 函数
 ```
 
-### When (Not) to Use Macros
+### 何时（不）使用宏
 
-**Use macros when**:
-- Reducing boilerplate that traits/generics can't handle (variadic arguments, DRY test generation)
-- Creating DSLs (`html!`, `sql!`, `vec!`)
-- Conditional code generation (`cfg!`, `compile_error!`)
+**使用宏当**：
+- 减少 traits/泛型无法处理的样板代码（可变参数、DRY 测试生成）
+- 创建 DSLs（`html!`、`sql!`、`vec!`）
+- 条件代码生成（`cfg!`、`compile_error!`）
 
-**Don't use macros when**:
-- A function or generic would work (macros are harder to debug, autocomplete doesn't help)
-- You need type checking inside the macro (macros operate on tokens, not types)
-- The pattern is used once or twice (not worth the abstraction cost)
+**不使用宏当**：
+- 函数或泛型可以工作（宏更难调试，自动补全不帮助）
+- 你需要在宏内部进行类型检查（宏在 token 上操作，不是类型）
+- 模式只使用一两次（不值得抽象成本）
 
 ```rust
-// ❌ Unnecessary macro — a function works fine:
+// ❌ 不必要的宏 —— 函数就很好：
 macro_rules! double {
     ($x:expr) => { $x * 2 };
 }
 
-// ✅ Just use a function:
+// ✅ 只用函数：
 fn double(x: i32) -> i32 { x * 2 }
 
-// ✅ Good macro use — variadic, can't be a function:
+// ✅ 好的宏用法 —— 可变参数，不能是函数：
 macro_rules! println {
     ($($arg:tt)*) => { /* format string + args */ };
 }
 ```
 
-### Procedural Macros Overview
+### 过程宏概述
 
-Procedural macros are Rust functions that transform token streams. They require a separate crate with `proc-macro = true`:
+过程宏是转换 token 流的 Rust 函数。它们需要带 `proc-macro = true` 的独立 crate：
 
 ```rust
-// Three types of proc macros:
+// 三种类型的过程宏：
 
-// 1. Derive macros — #[derive(MyTrait)]
-// Generate trait implementations from struct definitions
+// 1. Derive 宏 —— #[derive(MyTrait)]
+// 从结构体定义生成 trait 实现
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Config {
     name: String,
     port: u16,
 }
 
-// 2. Attribute macros — #[my_attribute]
-// Transform the annotated item
+// 2. 属性宏 —— #[my_attribute]
+// 转换被注解的项
 #[route(GET, "/api/users")]
 async fn list_users() -> Json<Vec<User>> { /* ... */ }
 
-// 3. Function-like macros — my_macro!(...)
-// Custom syntax
+// 3. 函数式宏 —— my_macro!(...)
+// 自定义语法
 let query = sql!(SELECT * FROM users WHERE id = ?);
 ```
 
-### Derive Macros in Practice
+### 实践中的 Derive 宏
 
-The most common proc macro type. Here's how `#[derive(Debug)]` works conceptually:
+最常见的过程宏类型。这是 `#[derive(Debug)]` 如何在概念上工作的：
 
 ```rust
-// Input (your struct):
+// 输入（你的结构体）：
 #[derive(Debug)]
 struct Point {
     x: f64,
     y: f64,
 }
 
-// The derive macro generates:
+// derive 宏生成：
 impl std::fmt::Debug for Point {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Point")
@@ -146,47 +146,43 @@ impl std::fmt::Debug for Point {
 }
 ```
 
-**Commonly used derive macros**:
+**常用的 derive 宏**：
 
-| Derive | Crate | What It Generates |
+| Derive | Crate | 生成什么 |
 |--------|-------|-------------------|
-| `Debug` | std | `fmt::Debug` impl (debug printing) |
-| `Clone`, `Copy` | std | Value duplication |
-| `PartialEq`, `Eq` | std | Equality comparison |
-| `Hash` | std | Hashing for HashMap keys |
-| `Serialize`, `Deserialize` | serde | JSON/YAML/etc. encoding |
+| `Debug` | std | `fmt::Debug` impl（调试打印） |
+| `Clone`、`Copy` | std | 值复制 |
+| `PartialEq`、`Eq` | std | 相等性比较 |
+| `Hash` | std | 为 HashMap 键哈希 |
+| `Serialize`、`Deserialize` | serde | JSON/YAML 等编码 |
 | `Error` | thiserror | `std::error::Error` + `Display` |
-| `Parser` | `clap` | CLI argument parsing |
-| `Builder` | derive_builder | Builder pattern |
+| `Parser` | `clap` | CLI 参数解析 |
+| `Builder` | derive_builder | Builder 模式 |
 
-> **Practical advice**: Use derive macros liberally — they eliminate error-prone
-> boilerplate. Writing your own proc macros is an advanced topic; use existing
-> ones (`serde`, `thiserror`, `clap`) before building custom ones.
+> **实用建议**：大量使用 derive 宏 —— 它们消除易错的样板代码。编写你自己的过程宏是高级主题；在构建自定义宏之前使用现有的（`serde`、`thiserror`、`clap`）。
 
-### Macro Hygiene and `$crate`
+### 宏卫生和 `$crate`
 
-**Hygiene** means that identifiers created inside a macro don't collide with
-identifiers in the caller's scope. Rust's `macro_rules!` is *partially* hygienic:
+**卫生**意味着宏内部创建的标识符不会与调用者作用域中的标识符冲突。Rust 的 `macro_rules!` 是*部分*卫生的：
 
 ```rust
 macro_rules! make_var {
     () => {
-        let x = 42; // This 'x' is in the MACRO's scope
+        let x = 42; // 这个 'x' 在宏的作用域内
     };
 }
 
 fn main() {
     let x = 10;
-    make_var!();   // Creates a different 'x' (hygienic)
-    println!("{x}"); // Prints 10, not 42 — macro's x doesn't leak
+    make_var!();   // 创建不同的 'x'（卫生的）
+    println!("{x}"); // 打印 10，不是 42 —— 宏的 x 不泄漏
 }
 ```
 
-**`$crate`**: When writing macros in a library, use `$crate` to refer to
-your own crate — it resolves correctly regardless of how users import your crate:
+**`$crate`**：当在库中编写宏时，使用 `$crate` 引用你自己的 crate —— 无论用户如何导入你的 crate 它都能正确解析：
 
 ```rust
-// In my_diagnostics crate:
+// 在 my_diagnostics crate 中：
 
 pub fn log_result(msg: &str) {
     println!("[diag] {msg}");
@@ -195,32 +191,30 @@ pub fn log_result(msg: &str) {
 #[macro_export]
 macro_rules! diag_log {
     ($($arg:tt)*) => {
-        // ✅ $crate always resolves to my_diagnostics, even if the user
-        // renamed the crate in their Cargo.toml
+        // ✅ $crate 总是解析为 my_diagnostics，即使用户
+        // 在他们的 Cargo.toml 中重命名了 crate
         $crate::log_result(&format!($($arg)*))
     };
 }
 
-// ❌ Without $crate:
-// my_diagnostics::log_result(...)  ← breaks if user writes:
+// ❌ 不用 $crate：
+// my_diagnostics::log_result(...)  ← 如果用户写会破坏：
 //   [dependencies]
 //   diag = { package = "my_diagnostics", version = "1" }
 ```
 
-> **Rule**: Always use `$crate::` in `#[macro_export]` macros. Never use
-> your crate's name directly.
+> **规则**：在 `#[macro_export]` 宏中总是使用 `$crate::`。从不用你的 crate 的名称直接。
 
-### Recursive Macros and `tt` Munching
+### 递归宏和 `tt` Munching
 
-Recursive macros process input one token at a time — a technique called
-**`tt` munching** (token-tree munching):
+递归宏一次处理一个 token 的输入 —— 一种称为**`tt` munching**（token-tree munching）的技术：
 
 ```rust
-// Count the number of expressions passed to the macro
+// 计算传递给宏的表达式数量
 macro_rules! count {
-    // Base case: no tokens left
+    // 基本情况：无 token 剩余
     () => { 0usize };
-    // Recursive case: consume one expression, count the rest
+    // 递归情况：消费一个表达式，计算其余的
     ($head:expr $(, $tail:expr)* $(,)?) => {
         1usize + count!($($tail),*)
     };
@@ -230,45 +224,42 @@ fn main() {
     let n = count!("a", "b", "c", "d");
     assert_eq!(n, 4);
 
-    // Works at compile time too:
+    // 也在编译时工作：
     const N: usize = count!(1, 2, 3);
     assert_eq!(N, 3);
 }
 ```
 
 ```rust
-// Build a heterogeneous tuple from a list of expressions:
+// 从表达式列表构建异构元组：
 macro_rules! tuple_from {
-    // Base: single element
+    // 基本：单个元素
     ($single:expr $(,)?) => { ($single,) };
-    // Recursive: first element + rest
+    // 递归：第一个元素 + 其余
     ($head:expr, $($tail:expr),+ $(,)?) => {
         ($head, tuple_from!($($tail),+))
     };
 }
 
 let t = tuple_from!(1, "hello", 3.14, true);
-// Expands to: (1, ("hello", (3.14, (true,))))
+// 展开为：(1, ("hello", (3.14, (true,))))
 ```
 
-**Fragment specifier subtleties**:
+**片段说明符细节**：
 
-| Fragment | Gotcha |
+| 片段 | 陷阱 |
 |----------|--------|
-| `$x:expr` | Greedily parses — `1 + 2` is ONE expression, not three tokens |
-| `$x:ty` | Greedily parses — `Vec<String>` is one type; can't be followed by `+` or `<` |
-| `$x:tt` | Matches exactly ONE token tree — most flexible, least checked |
-| `$x:ident` | Only plain identifiers — not paths like `std::io` |
-| `$x:pat` | In Rust 2021, matches `A \| B` patterns; use `$x:pat_param` for single patterns |
+| `$x:expr` | 贪婪解析 —— `1 + 2` 是一个表达式，不是三个 token |
+| `$x:ty` | 贪婪解析 —— `Vec<String>` 是一个类型；后面不能跟 `+` 或 `<` |
+| `$x:tt` | 精确匹配一个 token 树 —— 最灵活，最少检查 |
+| `$x:ident` | 仅普通标识符 —— 不是路径如 `std::io` |
+| `$x:pat` | 在 Rust 2021 中，匹配 `A | B` 模式；对单个模式使用 `$x:pat_param` |
 
-> **When to use `tt`**: When you need to forward tokens to another macro without
-> the parser constraining them. `$($args:tt)*` is the "accept everything" pattern
-> (used by `println!`, `format!`, `vec!`).
+> **何时使用 `tt`**：当你需要转发 token 到另一个宏而不受解析器约束时。`$($args:tt)*` 是"接受一切"模式（`println!`、`format!`、`vec!` 使用）。
 
-### Writing a Derive Macro with `syn` and `quote`
+### 用 `syn` 和 `quote` 编写 Derive 宏
 
-Derive macros live in a separate crate (`proc-macro = true`) and transform
-a token stream using `syn` (parse Rust) and `quote` (generate Rust):
+Derive 宏存在于独立的 crate 中（`proc-macro = true`）并使用 `syn`（解析 Rust）和 `quote`（生成 Rust）转换 token 流：
 
 ```toml
 # my_derive/Cargo.toml
@@ -287,15 +278,15 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-/// Derive macro that generates a `describe()` method
-/// returning the struct name and field names.
+/// 生成 `describe()` 方法的 derive 宏
+/// 返回结构体名称和字段名称。
 #[proc_macro_derive(Describe)]
 pub fn derive_describe(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
     let name_str = name.to_string();
 
-    // Extract field names (only for structs with named fields)
+    // 提取字段名称（仅用于带命名字段的结构体）
     let fields = match &input.data {
         syn::Data::Struct(data) => {
             data.fields.iter()
@@ -321,7 +312,7 @@ pub fn derive_describe(input: TokenStream) -> TokenStream {
 ```
 
 ```rust
-// In the application crate:
+// 在应用 crate 中：
 use my_derive::Describe;
 
 #[derive(Describe)]
@@ -337,40 +328,36 @@ fn main() {
 }
 ```
 
-**The workflow**: `TokenStream` (raw tokens) → `syn::parse` (AST) →
-inspect/transform → `quote!` (generate tokens) → `TokenStream` (back to compiler).
+**工作流**：`TokenStream`（原始 token）→ `syn::parse`（AST）→ 检查/转换 → `quote!`（生成 token）→ `TokenStream`（返回编译器）。
 
-| Crate | Role | Key types |
+| Crate | 角色 | 关键类型 |
 |-------|------|-----------|
-| `proc-macro` | Compiler interface | `TokenStream` |
-| `syn` | Parse Rust source into AST | `DeriveInput`, `ItemFn`, `Type` |
-| `quote` | Generate Rust tokens from templates | `quote!{}`, `#variable` interpolation |
-| `proc-macro2` | Bridge between syn/quote and proc-macro | `TokenStream`, `Span` |
+| `proc-macro` | 编译器接口 | `TokenStream` |
+| `syn` | 将 Rust 源码解析为 AST | `DeriveInput`、`ItemFn`、`Type` |
+| `quote` | 从模板生成 Rust token | `quote!{}`、`#variable` 插值 |
+| `proc-macro2` | syn/quote 和 proc-macro 之间的桥 | `TokenStream`、`Span` |
 
-> **Practical tip**: Start by studying the source of a simple derive macro
-> like `thiserror` or `derive_more` before writing your own. The
-> `cargo expand` command (via `cargo-expand`) shows what any macro expands
-> to — invaluable for debugging.
+> **实用提示**：在编写自己的宏之前，从研究简单 derive 宏的源码开始，如 `thiserror` 或 `derive_more`。`cargo expand` 命令（通过 `cargo-expand`）显示任何宏展开为什么 —— 对调试非常宝贵。
 
-> **Key Takeaways — Macros**
-> - `macro_rules!` for simple code generation; proc macros (`syn` + `quote`) for complex derives
-> - Prefer generics/traits over macros when possible — macros are harder to debug and maintain
-> - `$crate` ensures hygiene; `tt` munching enables recursive pattern matching
+> **关键要点 —— 宏**
+> - `macro_rules!` 用于简单代码生成；过程宏（`syn` + `quote`）用于复杂 derive
+> - 可能时优先使用泛型/traits 而不是宏 —— 宏更难调试和维护
+> - `$crate` 确保卫生；`tt` munching 实现递归模式匹配
 
-> **See also:** [Ch 2 — Traits](ch02-traits-in-depth.md) for when traits/generics beat macros. [Ch 13 — Testing](ch14-testing-and-benchmarking-patterns.md) for testing macro-generated code.
+> **另见：**[第 2 章 —— Traits](ch02-traits-in-depth.md) 了解何时 traits/泛型胜过宏。[第 14 章 —— 测试](ch14-testing-and-benchmarking-patterns.md) 了解测试宏生成的代码。
 
 ```mermaid
 flowchart LR
-    A["Source code"] --> B["macro_rules!<br>pattern matching"]
-    A --> C["#[derive(MyMacro)]<br>proc macro"]
+    A["源码"] --> B["macro_rules!<br>模式匹配"]
+    A --> C["#[derive(MyMacro)]<br>过程宏"]
 
-    B --> D["Token expansion"]
-    C --> E["syn: parse AST"]
-    E --> F["Transform"]
-    F --> G["quote!: generate tokens"]
+    B --> D["Token 展开"]
+    C --> E["syn: 解析 AST"]
+    E --> F["转换"]
+    F --> G["quote!: 生成 token"]
     G --> D
 
-    D --> H["Compiled code"]
+    D --> H["编译后的代码"]
 
     style A fill:#e8f4f8,stroke:#2980b9,color:#000
     style B fill:#d4efdf,stroke:#27ae60,color:#000
@@ -384,9 +371,9 @@ flowchart LR
 
 ---
 
-### Exercise: Declarative Macro — `map!` ★ (~15 min)
+### 练习：声明式宏 —— `map!` ★（约 15 分钟）
 
-Write a `map!` macro that creates a `HashMap` from key-value pairs:
+编写一个 `map!` 宏，从键值对创建 `HashMap`：
 
 ```rust,ignore
 let m = map! {
@@ -396,10 +383,10 @@ let m = map! {
 assert_eq!(m.get("host"), Some(&"localhost"));
 ```
 
-Requirements: support trailing comma and empty invocation `map!{}`.
+要求：支持尾随逗号和空调用 `map!{}`。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 答案</summary>
 
 ```rust
 macro_rules! map {
@@ -431,4 +418,3 @@ fn main() {
 </details>
 
 ***
-

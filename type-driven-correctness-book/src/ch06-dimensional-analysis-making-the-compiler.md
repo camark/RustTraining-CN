@@ -1,59 +1,55 @@
-# Dimensional Analysis — Making the Compiler Check Your Units 🟢
+# 量纲分析 —— 让编译器检查你的单位 🟢
 
-> **What you'll learn:** How newtype wrappers and the `uom` crate turn the compiler into a unit-checking engine, preventing the class of bug that destroyed a $328M spacecraft.
+> **你将学到什么：** newtype 包装器和 `uom` crate 如何将编译器变成单位检查引擎，防止摧毁 3.28 亿美元航天器的那类 bug。
 >
-> **Cross-references:** [ch02](ch02-typed-command-interfaces-request-determi.md) (typed commands use these types), [ch07](ch07-validated-boundaries-parse-dont-validate.md) (validated boundaries), [ch10](ch10-putting-it-all-together-a-complete-diagn.md) (integration)
+> **交叉引用**：[第 2 章](ch02-typed-command-interfaces-request-determi.md)（类型化命令使用这些类型）、[第 7 章](ch07-validated-boundaries-parse-dont-validate.md)（验证边界）、[第 10 章](ch10-putting-it-all-together-a-complete-diagn.md)（集成）
 
-## The Mars Climate Orbiter
+## 火星气候轨道器
 
-In 1999, NASA's Mars Climate Orbiter was lost because one team sent thrust data in
-**pound-force seconds** while the navigation team expected **newton-seconds**. The
-spacecraft entered the atmosphere at 57 km instead of 226 km and disintegrated.
-Cost: $327.6 million.
+1999 年，NASA 的火星气候轨道器丢失了，因为一个团队发送推力数据使用**磅力秒**，而导航团队期望**牛顿秒**。航天器以 57 公里而不是 226 公里的高度进入大气层并解体。成本：3.276 亿美元。
 
-The root cause: **both values were `double`**. The compiler couldn't distinguish them.
+根本原因：**两个值都是 `double`**。编译器无法区分它们。
 
-This same class of bug lurks in every hardware diagnostic that deals with physical
-quantities:
+同一类 bug 潜伏在每个处理物理量的硬件诊断中：
 
 ```c
-// C — all doubles, no unit checking
+// C —— 都是 double，没有单位检查
 double read_temperature(int sensor_id);   // Celsius? Fahrenheit? Kelvin?
 double read_voltage(int channel);          // Volts? Millivolts?
-double read_fan_speed(int fan_id);         // RPM? Radians per second?
+double read_fan_speed(int fan_id);         // RPM? 弧度每秒？
 
-// Bug: comparing Celsius to Fahrenheit
-if (read_temperature(0) > read_temperature(1)) { ... }  // units might differ!
+// Bug：比较 Celsius 和 Fahrenheit
+if (read_temperature(0) > read_temperature(1)) { ... }  // 单位可能不同！
 ```
 
-## Newtypes for Physical Quantities
+## 物理量的新类型
 
-The simplest correct-by-construction approach: **wrap each unit in its own type**.
+最简单的正确构造方法：**将每个单位包装到自己类型中**。
 
 ```rust,ignore
 use std::fmt;
 
-/// Temperature in degrees Celsius.
+/// 摄氏度温度。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Celsius(pub f64);
 
-/// Temperature in degrees Fahrenheit.
+/// 华氏度温度。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Fahrenheit(pub f64);
 
-/// Voltage in volts.
+/// 伏特电压。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Volts(pub f64);
 
-/// Voltage in millivolts.
+/// 毫伏电压。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Millivolts(pub f64);
 
-/// Fan speed in RPM.
+/// RPM 风扇速度。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Rpm(pub f64);
 
-// Conversions are explicit:
+// 转换是显式的：
 impl From<Celsius> for Fahrenheit {
     fn from(c: Celsius) -> Self {
         Fahrenheit(c.0 * 9.0 / 5.0 + 32.0)
@@ -91,7 +87,7 @@ impl fmt::Display for Rpm {
 }
 ```
 
-Now the compiler catches unit mismatches:
+现在编译器捕获单位不匹配：
 
 ```rust,ignore
 # #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -100,23 +96,22 @@ Now the compiler catches unit mismatches:
 # pub struct Volts(pub f64);
 
 fn check_thermal_limit(temp: Celsius, limit: Celsius) -> bool {
-    temp > limit  // ✅ same units — compiles
+    temp > limit  // ✅ 相同单位 —— 编译通过
 }
 
 // fn bad_comparison(temp: Celsius, voltage: Volts) -> bool {
-//     temp > voltage  // ❌ ERROR: mismatched types — Celsius vs Volts
+//     temp > voltage  // ❌ 错误：类型不匹配 —— Celsius vs Volts
 // }
 ```
 
-**Zero runtime cost** — newtypes compile down to raw `f64` values. The wrapper is
-purely a type-level concept.
+**零运行时成本** —— 新类型编译为原始 `f64` 值。包装器纯粹是类型级概念。
 
-## Newtype Macro for Hardware Quantities
+## 硬件数量的新类型宏
 
-Writing newtypes by hand gets repetitive. A macro eliminates the boilerplate:
+手写新类型变得重复。宏消除了样板代码：
 
 ```rust,ignore
-/// Generate a newtype for a physical quantity.
+/// 为物理量生成新类型。
 macro_rules! quantity {
     ($Name:ident, $unit:expr) => {
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -145,7 +140,7 @@ macro_rules! quantity {
     };
 }
 
-// Usage:
+// 用法：
 quantity!(Celsius, "°C");
 quantity!(Fahrenheit, "°F");
 quantity!(Volts, "V");
@@ -158,22 +153,13 @@ quantity!(Hertz, "Hz");
 quantity!(Bytes, "B");
 ```
 
-Each line generates a complete type with Display, Add, Sub, and comparison operators.
-**All at zero runtime cost.**
+每行生成一个完整的类型，带有 Display、Add、Sub 和比较运算符。**全部零运行时成本**。
 
-> **Physics caveat:** The macro generates `Add` for *all* quantities, including
-> `Celsius`. Adding absolute temperatures (`25°C + 30°C = 55°C`) is not
-> physically meaningful — you'd need a separate `TemperatureDelta` type for
-> differences. The `uom` crate (shown later) handles this correctly. For
-> simple sensor diagnostics where you only compare and display, you can omit
-> `Add`/`Sub` from temperature types and keep them for quantities where
-> addition makes sense (Watts, Volts, Bytes). If you need delta arithmetic,
-> define a `CelsiusDelta(f64)` newtype with `impl Add<CelsiusDelta> for Celsius`.
+> **物理注意事项：** 宏为*所有*数量生成 `Add`，包括 `Celsius`。添加绝对温度（`25°C + 30°C = 55°C`）在物理上没有意义 —— 你需要单独的 `TemperatureDelta` 类型来表示差值。`uom` crate（稍后展示）正确处理这个。对于简单的传感器诊断，你只需要比较和显示，你可以从温度类型中省略 `Add`/`Sub`，并将它们保留给加法有意义的数量（Watts、Volts、Bytes）。如果你需要差值算术，定义一个 `CelsiusDelta(f64)` 新类型，带有 `impl Add<CelsiusDelta> for Celsius`。
 
-## Applied Example: Sensor Pipeline
+## 应用示例：传感器流水线
 
-A typical diagnostic reads raw ADC values, converts them to physical units, and
-compares against thresholds. With dimensional types, each step is type-checked:
+典型的诊断读取原始 ADC 值，将它们转换为物理单位，并与阈值比较。使用量纲类型，每个步骤都经过类型检查：
 
 ```rust,ignore
 # macro_rules! quantity {
@@ -195,17 +181,17 @@ compares against thresholds. With dimensional types, each step is type-checked:
 # quantity!(Volts, "V");
 # quantity!(Rpm, "RPM");
 
-/// Raw ADC reading — not yet a physical quantity.
+/// 原始 ADC 读数 —— 还不是物理量。
 #[derive(Debug, Clone, Copy)]
 pub struct AdcReading {
     pub channel: u8,
-    pub raw: u16,   // 12-bit ADC value (0–4095)
+    pub raw: u16,   // 12 位 ADC 值（0–4095）
 }
 
-/// Calibration coefficients for converting ADC → physical unit.
+/// 用于将 ADC 转换为物理单位的校准系数。
 pub struct TemperatureCalibration {
     pub offset: f64,
-    pub scale: f64,   // °C per ADC count
+    pub scale: f64,   // 每 ADC 计数的°C
 }
 
 pub struct VoltageCalibration {
@@ -214,20 +200,20 @@ pub struct VoltageCalibration {
 }
 
 impl TemperatureCalibration {
-    /// Convert raw ADC → Celsius. The return type guarantees the output is Celsius.
+    /// 转换原始 ADC → Celsius。返回类型保证输出是 Celsius。
     pub fn convert(&self, adc: AdcReading) -> Celsius {
         Celsius::new(adc.raw as f64 * self.scale + self.offset)
     }
 }
 
 impl VoltageCalibration {
-    /// Convert raw ADC → Volts. The return type guarantees the output is Volts.
+    /// 转换原始 ADC → Volts。返回类型保证输出是 Volts。
     pub fn convert(&self, adc: AdcReading) -> Volts {
         Volts::new(adc.raw as f64 * self.reference_mv / 4096.0 / self.divider_ratio / 1000.0)
     }
 }
 
-/// Threshold check — only compiles if units match.
+/// 阈值检查 —— 只有单位匹配时才编译。
 pub struct Threshold<T: PartialOrd> {
     pub warning: T,
     pub critical: T,
@@ -265,26 +251,24 @@ fn sensor_pipeline_example() {
     let result = temp_threshold.check(&temp);
     println!("Temperature: {temp}, Status: {result:?}");
 
-    // This won't compile — can't check a Celsius reading against a Volts threshold:
+    // 这不会编译 —— 不能用 Celsius 读数检查 Volts 阈值：
     // let volt_threshold = Threshold {
     //     warning: Volts::new(11.4),
     //     critical: Volts::new(10.8),
     // };
-    // volt_threshold.check(&temp);  // ❌ ERROR: expected &Volts, found &Celsius
+    // volt_threshold.check(&temp);  // ❌ 错误：期望 &Volts，找到 &Celsius
 }
 ```
 
-The **entire pipeline** is statically type-checked:
-- ADC readings are raw counts (not units)
-- Calibration produces typed quantities (Celsius, Volts)
-- Thresholds are generic over the quantity type
-- Comparing Celsius against Volts is a **compile error**
+**整个流水线**静态类型检查：
+- ADC 读数是原始计数（不是单位）
+- 校准生成类型化的数量（Celsius、Volts）
+- 阈值对数量类型泛型
+- 比较 Celsius 和 Volts 是**编译错误**
 
-## The uom Crate
+## uom Crate
 
-For production use, the [`uom`](https://crates.io/crates/uom) crate provides
-a comprehensive dimensional analysis system with hundreds of units, automatic
-conversion, and zero runtime overhead:
+对于生产用途，[`uom`](https://crates.io/crates/uom) crate 提供全面的量纲分析系统，包含数百个单位、自动转换和零运行时开销：
 
 ```rust,ignore
 // Cargo.toml: uom = { version = "0.36", features = ["f64"] }
@@ -298,25 +282,23 @@ conversion, and zero runtime overhead:
 // let voltage = ElectricPotential::new::<volt>(12.0);
 // let power = Power::new::<watt>(250.0);
 //
-// // temp + voltage;  // ❌ compile error — can't add temperature to voltage
-// // power > temp;    // ❌ compile error — can't compare power to temperature
+// // temp + voltage;  // ❌ 编译错误 —— 不能将温度加到电压
+// // power > temp;    // ❌ 编译错误 —— 不能将功率与温度比较
 ```
 
-Use `uom` when you need automatic derived-unit support (e.g., Watts = Volts × Amperes).
-Use hand-rolled newtypes when you need only simple quantities without derived-unit
-arithmetic.
+当你需要自动派生单位支持时（例如，Watts = Volts × Amperes）使用 `uom`。当你只需要简单数量而不需要派生单位算术时，使用手写新类型。
 
-### When to Use Dimensional Types
+### 何时使用量纲类型
 
-| Scenario | Recommendation |
+| 场景 | 推荐 |
 |----------|---------------|
-| Sensor readings (temp, voltage, fan) | ✅ Always — prevents unit confusion |
-| Threshold comparisons | ✅ Always — generic `Threshold<T>` |
-| Cross-subsystem data exchange | ✅ Always — enforce contracts at API boundaries |
-| Internal calculations (same unit throughout) | ⚠️ Optional — less bug-prone |
-| String/display formatting | ❌ Use Display impl on the quantity type |
+| 传感器读数（温度、电压、风扇） | ✅ 总是 —— 防止单位混淆 |
+| 阈值比较 | ✅ 总是 —— 泛型 `Threshold<T>` |
+| 跨子系统数据交换 | ✅ 总是 —— 在 API 边界强制执行契约 |
+| 内部计算（整个过程单位相同） | ⚠️ 可选 —— bug 可能性较低 |
+| 字符串/显示格式化 | ❌ 在数量类型上使用 Display impl |
 
-## Sensor Pipeline Type Flow
+## 传感器流水线类型流
 
 ```mermaid
 flowchart LR
@@ -335,15 +317,15 @@ flowchart LR
     style ERR fill:#ffcdd2,color:#000
 ```
 
-## Exercise: Power Budget Calculator
+## 练习：功率预算计算器
 
-Create `Watts(f64)` and `Amperes(f64)` newtypes. Implement:
-- `Watts::from_vi(volts: Volts, amps: Amperes) -> Watts` (P = V × I)
-- A `PowerBudget` that tracks total watts and rejects additions that exceed a configured limit.
-- Attempting `Watts + Celsius` should be a compile error.
+创建 `Watts(f64)` 和 `Amperes(f64)` 新类型。实现：
+- `Watts::from_vi(volts: Volts, amps: Amperes) -> Watts`（P = V × I）
+- `PowerBudget` 跟踪总瓦数并拒绝超过配置限制的添加。
+- 尝试 `Watts + Celsius` 应该是编译错误。
 
 <details>
-<summary>Solution</summary>
+<summary>解决方案</summary>
 
 ```rust,ignore
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -390,19 +372,19 @@ impl PowerBudget {
     }
 }
 
-// ❌ Compile error: Watts + Celsius → "mismatched types"
+// ❌ 编译错误：Watts + Celsius → "mismatched types"
 // let bad = Watts(100.0) + Celsius(50.0);
 ```
 
 </details>
 
-## Key Takeaways
+## 关键要点
 
-1. **Newtypes prevent unit confusion at zero cost** — `Celsius` and `Rpm` are both `f64` inside, but the compiler treats them as different types.
-2. **The Mars Climate Orbiter bug is impossible** — passing `Pounds` where `Newtons` is expected is a compile error.
-3. **`quantity!` macro reduces boilerplate** — stamp out Display, arithmetic, and threshold logic for each unit.
-4. **`uom` crate handles derived units** — use it when you need `Watts = Volts × Amperes` automatically.
-5. **Threshold is generic over the quantity** — `Threshold<Celsius>` can't accidentally compare to `Threshold<Rpm>`.
+1. **新类型防止单位混淆，零成本** —— `Celsius` 和 `Rpm` 内部都是 `f64`，但编译器将它们视为不同的类型。
+2. **火星气候轨道器 bug 不可能** —— 在期望 `Newtons` 的地方传递 `Pounds` 是编译错误。
+3. **`quantity!` 宏减少样板** —— 为每个单位生成 Display、算术和阈值逻辑。
+4. **`uom` crate 处理派生单位** —— 当你需要自动 `Watts = Volts × Amperes` 时使用它。
+5. **Threshold 对数量泛型** —— `Threshold<Celsius>` 不能意外比较 `Threshold<Rpm>`。
 
 ---
 

@@ -1,22 +1,21 @@
-## Type Conversions in Rust
+## Rust 中的类型转换
 
-> **What you'll learn:** `From` and `Into` traits for zero-cost type conversions, `TryFrom` for fallible conversions,
-> how `impl From<A> for B` auto-generates `Into`, and string conversion patterns.
+> **你将学到什么：** `From` 和 `Into` traits 用于零成本类型转换，`TryFrom` 用于可能失败的转换，
+> `impl From<A> for B` 如何自动生成 `Into`，以及字符串转换模式。
 >
-> **Difficulty:** 🟡 Intermediate
+> **难度：** 🟡 中级
 
-Python handles type conversions with constructor calls (`int("42")`, `str(42)`,
-`float("3.14")`). Rust uses the `From` and `Into` traits for type-safe conversions.
+Python 使用构造函数调用处理类型转换（`int("42")`、`str(42)`、`float("3.14")`）。Rust 使用 `From` 和 `Into` traits 进行类型安全的转换。
 
-### Python Type Conversion
+### Python 类型转换
 ```python
-# Python — explicit constructors for conversion
-x = int("42")           # str → int (can raise ValueError)
+# Python —— 使用显式构造函数进行转换
+x = int("42")           # str → int（可能抛出 ValueError）
 s = str(42)             # int → str
 f = float("3.14")       # str → float
 lst = list((1, 2, 3))   # tuple → list
 
-# Custom conversion via __init__ or class methods
+# 通过 __init__ 或类方法进行自定义转换
 class Celsius:
     def __init__(self, temp: float):
         self.temp = temp
@@ -30,8 +29,8 @@ c = Celsius.from_fahrenheit(212.0)  # 100.0°C
 
 ### Rust From/Into
 ```rust
-// Rust — From trait defines conversions
-// Implementing From<T> gives you Into<U> automatically!
+// Rust —— From trait 定义转换
+// 实现 From<T> 会自动给你 Into<U>！
 
 struct Celsius(f64);
 struct Fahrenheit(f64);
@@ -42,25 +41,25 @@ impl From<Fahrenheit> for Celsius {
     }
 }
 
-// Now both work:
-let c1 = Celsius::from(Fahrenheit(212.0));    // Explicit From
-let c2: Celsius = Fahrenheit(212.0).into();   // Into (automatically derived)
+// 现在两种都可行：
+let c1 = Celsius::from(Fahrenheit(212.0));    // 显式 From
+let c2: Celsius = Fahrenheit(212.0).into();   // Into（自动派生）
 
-// String conversions:
+// 字符串转换：
 let s: String = String::from("hello");         // &str → String
-let s: String = "hello".to_string();           // Same thing
-let s: String = "hello".into();                // Also works (From is implemented)
+let s: String = "hello".to_string();           // 相同
+let s: String = "hello".into();                // 也可行（实现了 From）
 
-let num: i64 = 42i32.into();                   // i32 → i64 (lossless, so From exists)
-// let small: i32 = 42i64.into();              // ❌ i64 → i32 might lose data — no From
+let num: i64 = 42i32.into();                   // i32 → i64（无损，所以存在 From）
+// let small: i32 = 42i64.into();              // ❌ i64 → i32 可能丢失数据 —— 没有 From
 
-// For fallible conversions, use TryFrom:
-let n: Result<i32, _> = "42".parse();          // str → i32 (might fail)
-let n: i32 = "42".parse().unwrap();            // Panic if not a number
-let n: i32 = "42".parse()?;                    // Propagate error with ?
+// 对于可能失败的转换，使用 TryFrom：
+let n: Result<i32, _> = "42".parse();          // str → i32（可能失败）
+let n: i32 = "42".parse().unwrap();            // 如果不是数字则 Panic
+let n: i32 = "42".parse()?;                    // 使用 ? 传播错误
 ```
 
-### The From/Into Relationship
+### From/Into 关系
 
 ```mermaid
 flowchart LR
@@ -70,14 +69,14 @@ flowchart LR
     style B fill:#d4edda
 ```
 
-> **Rule of thumb**: Always implement `From`, never implement `Into` directly. Implementing `From<A> for B` gives you `Into<B> for A` for free.
+> **经验法则**：总是实现 `From`，永远不要直接实现 `Into`。实现 `From<A> for B` 会免费给你 `Into<B> for A`。
 
 ***
 
-### When to Use From/Into
+### 何时使用 From/Into
 
 ```rust
-// Implement From<T> for your types to enable ergonomic API design:
+// 为你的类型实现 From<T> 以实现符合人体工程学的 API 设计：
 
 #[derive(Debug)]
 struct UserId(i64);
@@ -88,31 +87,31 @@ impl From<i64> for UserId {
     }
 }
 
-// Now functions can accept anything convertible to UserId:
+// 现在函数可以接受任何可转换为 UserId 的东西：
 fn find_user(id: impl Into<UserId>) -> Option<String> {
     let user_id = id.into();
-    // ... lookup logic
+    // ... 查找逻辑
     Some(format!("User #{:?}", user_id))
 }
 
-find_user(42i64);              // ✅ i64 auto-converts to UserId
-find_user(UserId(42));         // ✅ UserId stays as-is
+find_user(42i64);              // ✅ i64 自动转换为 UserId
+find_user(UserId(42));         // ✅ UserId 保持不变
 ```
 
 ***
 
-## TryFrom — Fallible Conversions
+## TryFrom —— 可能失败的转换
 
-Not all conversions can succeed. Python raises exceptions; Rust uses `TryFrom` which returns a `Result`:
+不是所有的转换都能成功。Python 抛出异常；Rust 使用 `TryFrom` 返回 `Result`：
 
 ```python
-# Python — fallible conversions raise exceptions
+# Python —— 可能失败的转换抛出异常
 try:
     port = int("not_a_number")   # ValueError
 except ValueError as e:
     print(f"Invalid: {e}")
 
-# Custom validation in __init__
+# 在 __init__ 中自定义验证
 class Port:
     def __init__(self, value: int):
         if not (1 <= value <= 65535):
@@ -120,7 +119,7 @@ class Port:
         self.value = value
 
 try:
-    p = Port(99999)  # ValueError at runtime
+    p = Port(99999)  # 运行时 ValueError
 except ValueError:
     pass
 ```
@@ -128,11 +127,11 @@ except ValueError:
 ```rust
 use std::num::ParseIntError;
 
-// TryFrom for built-in types
+// 用于内置类型的 TryFrom
 let n: Result<i32, ParseIntError> = "42".try_into();   // Ok(42)
 let n: Result<i32, ParseIntError> = "bad".try_into();  // Err(...)
 
-// Custom TryFrom for validation
+// 用于验证的自定义 TryFrom
 #[derive(Debug)]
 struct Port(u16);
 
@@ -160,40 +159,40 @@ impl std::fmt::Display for PortError {
     }
 }
 
-// Usage:
+// 用法：
 let p: Result<Port, _> = 8080u16.try_into();   // Ok(Port(8080))
 let p: Result<Port, _> = 0u16.try_into();       // Err(PortError::Zero)
 ```
 
-> **Python → Rust mental model**: `TryFrom` = `__init__` that validates and can fail. But instead of raising an exception, it returns `Result` — so callers **must** handle the error case.
+> **Python → Rust 心智模型**：`TryFrom` = `__init__` 可以验证并可能失败。但是它不是抛出异常，而是返回 `Result` —— 所以调用者**必须**处理错误情况。
 
 ***
 
-## String Conversion Patterns
+## 字符串转换模式
 
-Strings are the most common source of conversion confusion for Python developers:
+字符串是 Python 开发者最容易混淆的转换来源：
 
 ```rust
-// String → &str (borrowing, free)
+// String → &str（借用，免费）
 let s = String::from("hello");
-let r: &str = &s;              // Automatic Deref coercion
-let r: &str = s.as_str();     // Explicit
+let r: &str = &s;              // 自动 Deref 强制转换
+let r: &str = s.as_str();     // 显式
 
-// &str → String (allocating, costs memory)
+// &str → String（分配，消耗内存）
 let r: &str = "hello";
 let s1 = String::from(r);     // From trait
-let s2 = r.to_string();       // ToString trait (via Display)
+let s2 = r.to_string();       // ToString trait（通过 Display）
 let s3: String = r.into();    // Into trait
 
 // Number → String
-let s = 42.to_string();       // "42" — like Python's str(42)
-let s = format!("{:.2}", 3.14); // "3.14" — like Python's f"{3.14:.2f}"
+let s = 42.to_string();       // "42" —— 类似 Python 的 str(42)
+let s = format!("{:.2}", 3.14); // "3.14" —— 类似 Python 的 f"{3.14:.2f}"
 
 // String → Number
-let n: i32 = "42".parse().unwrap();       // like Python's int("42")
-let f: f64 = "3.14".parse().unwrap();     // like Python's float("3.14")
+let n: i32 = "42".parse().unwrap();       // 类似 Python 的 int("42")
+let f: f64 = "3.14".parse().unwrap();     // 类似 Python 的 float("3.14")
 
-// Custom types → String (implement Display)
+// 自定义类型 → String（实现 Display）
 use std::fmt;
 
 struct Point { x: f64, y: f64 }
@@ -205,31 +204,31 @@ impl fmt::Display for Point {
 }
 
 let p = Point { x: 1.0, y: 2.0 };
-println!("{p}");                // (1, 2) — like Python's __str__
-let s = p.to_string();         // Also works! Display gives you ToString for free.
+println!("{p}");                // (1, 2) —— 类似 Python 的 __str__
+let s = p.to_string();         // 也可行！Display 免费给你 ToString。
 ```
 
-### Conversion Quick Reference
+### 转换快速参考
 
-| Python | Rust | Notes |
-|--------|------|-------|
-| `str(x)` | `x.to_string()` | Requires `Display` impl |
-| `int("42")` | `"42".parse::<i32>()` | Returns `Result` |
-| `float("3.14")` | `"3.14".parse::<f64>()` | Returns `Result` |
-| `list(iter)` | `iter.collect::<Vec<_>>()` | Type annotation needed |
-| `dict(pairs)` | `pairs.collect::<HashMap<_,_>>()` | Type annotation needed |
-| `bool(x)` | No direct equivalent | Use explicit checks |
-| `MyClass(x)` | `MyClass::from(x)` | Implement `From<T>` |
-| `MyClass(x)` (validates) | `MyClass::try_from(x)?` | Implement `TryFrom<T>` |
+| Python | Rust | 说明 |
+|--------|------|------|
+| `str(x)` | `x.to_string()` | 需要 `Display` 实现 |
+| `int("42")` | `"42".parse::<i32>()` | 返回 `Result` |
+| `float("3.14")` | `"3.14".parse::<f64>()` | 返回 `Result` |
+| `list(iter)` | `iter.collect::<Vec<_>>()` | 需要类型注解 |
+| `dict(pairs)` | `pairs.collect::<HashMap<_,_>>()` | 需要类型注解 |
+| `bool(x)` | 无直接等价物 | 使用显式检查 |
+| `MyClass(x)` | `MyClass::from(x)` | 实现 `From<T>` |
+| `MyClass(x)`（验证） | `MyClass::try_from(x)?` | 实现 `TryFrom<T>` |
 
 ***
 
-## Conversion Chains and Error Handling
+## 转换链和错误处理
 
-Real-world code often chains multiple conversions. Compare the approaches:
+现实世界的代码经常链式调用多个转换。比较这些方法：
 
 ```python
-# Python — chain of conversions with try/except
+# Python —— 使用 try/except 的转换链
 def parse_config(raw: str) -> tuple[str, int]:
     try:
         host, port_str = raw.split(":")
@@ -266,25 +265,25 @@ fn main() {
 }
 ```
 
-> **Key insight**: Each `?` is a visible exit point. In Python, any line inside `try` could be the one that throws — in Rust, only lines ending with `?` can fail.
+> **关键见解**：每个 `?` 都是一个可见的退出点。在 Python 中，`try` 内的任何一行都可能是抛出的那个 —— 在 Rust 中，只有以 `?` 结尾的行可能失败。
 >
-> 📌 **See also**: [Ch. 9 — Error Handling](ch09-error-handling.md) covers `Result`, `?`, and custom error types with `thiserror` in depth.
+> 📌 **另见**：[第 9 章 —— 错误处理](ch09-error-handling.md) 深入涵盖 `Result`、`?` 和使用 `thiserror` 的自定义错误类型。
 
 ---
 
-## Exercises
+## 练习
 
 <details>
-<summary><strong>🏋️ Exercise: Temperature Conversion Library</strong> (click to expand)</summary>
+<summary><strong>🏋️ 练习：温度转换库</strong>（点击展开）</summary>
 
-**Challenge**: Build a mini temperature conversion library:
-1. Define `Celsius(f64)`, `Fahrenheit(f64)`, and `Kelvin(f64)` structs
-2. Implement `From<Celsius> for Fahrenheit` and `From<Celsius> for Kelvin`
-3. Implement `TryFrom<f64> for Kelvin` that rejects values below absolute zero (-273.15°C = 0K)
-4. Implement `Display` for all three types (e.g., `"100.00°C"`)
+**挑战**：构建一个迷你温度转换库：
+1. 定义结构体 `Celsius(f64)`、`Fahrenheit(f64)` 和 `Kelvin(f64)`
+2. 实现 `From<Celsius> for Fahrenheit` 和 `From<Celsius> for Kelvin`
+3. 实现 `TryFrom<f64> for Kelvin` 拒绝低于绝对零度的值（-273.15°C = 0K）
+4. 为所有三种类型实现 `Display`（例如 `"100.00°C"`）
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 解决方案</summary>
 
 ```rust
 use std::fmt;
@@ -343,11 +342,10 @@ fn main() {
 }
 ```
 
-**Key takeaway**: `From` handles infallible conversions (Celsius→Fahrenheit always works). `TryFrom` handles fallible ones (negative Kelvin is impossible). Python conflates both in `__init__` — Rust makes the distinction explicit in the type system.
+**关键要点**：`From` 处理不可能失败的转换（Celsius→Fahrenheit 总是可行）。`TryFrom` 处理可能失败的转换（负 Kelvin 是不可能的）。Python 在 `__init__` 中混淆两者 —— Rust 在类型系统中使区分显式化。
 
 </details>
 </details>
-
 ***
 
 

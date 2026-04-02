@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls C:/git/RustTraining-CN/type-driven-correctness-book/src/*.md)"
+    ]
+  }
+}

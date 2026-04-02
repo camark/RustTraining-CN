@@ -1,13 +1,11 @@
-## No GIL: True Parallelism
+## 无 GIL：真正的并行
 
-> **What you'll learn:** Why the GIL limits Python concurrency, Rust's `Send`/`Sync` traits for compile-time thread safety,
-> `Arc<Mutex<T>>` vs Python `threading.Lock`, channels vs `queue.Queue`, and async/await differences.
+> **你将学到什么：** 为什么 GIL 限制 Python 并发，Rust 的 `Send`/`Sync` traits 用于编译时线程安全，
+> `Arc<Mutex<T>>` vs Python `threading.Lock`，channel vs `queue.Queue`，以及 async/await 差异。
 >
-> **Difficulty:** 🔴 Advanced
+> **难度：** 🔴 高级
 
-The GIL (Global Interpreter Lock) is Python's biggest limitation for CPU-bound work.
-Rust has no GIL — threads run truly in parallel, and the type system prevents data races
-at compile time.
+GIL（全局解释器锁）是 Python CPU 绑定工作的最大限制。Rust 没有 GIL —— 线程真正并行运行，类型系统在编译时防止数据竞争。
 
 ```mermaid
 gantt
@@ -26,13 +24,13 @@ gantt
         Thread 4 :b4, 0, 4
 ```
 
-> **Key insight**: Python threads run sequentially for CPU work (GIL serializes them). Rust threads run truly in parallel — 4 threads = ~4x speedup.
+> **关键见解**：Python 线程对于 CPU 工作顺序运行（GIL 序列化它们）。Rust 线程真正并行运行 —— 4 个线程 = 约 4 倍加速。
 >
-> 📌 **Prerequisite**: Make sure you're comfortable with [Ch. 7 — Ownership and Borrowing](ch07-ownership-and-borrowing.md) before tackling this chapter. `Arc`, `Mutex`, and move closures all build on ownership concepts.
+> 📌 **前提**：在开始本章之前，确保你熟悉 [第 7 章 —— 所有权和借用](ch07-ownership-and-borrowing.md)。`Arc`、`Mutex` 和 move 闭包都建立在所有权概念之上。
 
-### Python's GIL Problem
+### Python 的 GIL 问题
 ```python
-# Python — threads don't help for CPU-bound work
+# Python —— 线程对 CPU 绑定工作无帮助
 import threading
 import time
 
@@ -41,7 +39,7 @@ counter = 0
 def increment(n):
     global counter
     for _ in range(n):
-        counter += 1  # NOT thread-safe! But GIL "protects" simple operations
+        counter += 1  # 不是线程安全的！但 GIL"保护"简单操作
 
 threads = [threading.Thread(target=increment, args=(1_000_000,)) for _ in range(4)]
 start = time.perf_counter()
@@ -51,16 +49,16 @@ for t in threads:
     t.join()
 elapsed = time.perf_counter() - start
 
-print(f"Counter: {counter}")    # Might not be 4,000,000!
-print(f"Time: {elapsed:.2f}s")  # About the SAME as single-threaded (GIL)
+print(f"Counter: {counter}")    # 可能不是 4,000,000！
+print(f"Time: {elapsed:.2f}s")  # 与单线程大致相同（GIL）
 
-# For true parallelism, Python requires multiprocessing:
+# 对于真正的并行，Python 需要多进程：
 from multiprocessing import Pool
 with Pool(4) as pool:
-    results = pool.map(cpu_work, data)  # Separate processes, pickle overhead
+    results = pool.map(cpu_work, data)  # 独立进程，pickle 开销
 ```
 
-### Rust — True Parallelism, Compile-Time Safety
+### Rust —— 真正的并行，编译时安全
 ```rust
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -82,60 +80,60 @@ fn main() {
         h.join().unwrap();
     }
 
-    println!("Counter: {}", counter.load(Ordering::Relaxed)); // Always 4,000,000
-    // Runs on ALL cores — true parallelism, no GIL
+    println!("Counter: {}", counter.load(Ordering::Relaxed)); // 总是 4,000,000
+    // 在所有核心上运行 —— 真正的并行，无 GIL
 }
 ```
 
 ***
 
-## Thread Safety: Type System Guarantees
+## 线程安全：类型系统保证
 
-### Python — Runtime Errors
+### Python —— 运行时错误
 ```python
-# Python — data races caught at runtime (or not at all)
+# Python —— 数据竞争在运行时捕获（或根本不捕获）
 import threading
 
 shared_list = []
 
 def append_items(items):
     for item in items:
-        shared_list.append(item)  # "Thread-safe" due to GIL for append
-        # But complex operations are NOT safe:
+        shared_list.append(item)  # 由于 GIL，append 是"线程安全"的
+        # 但复杂操作不是安全的：
         # if item not in shared_list:
-        #     shared_list.append(item)  # RACE CONDITION!
+        #     shared_list.append(item)  # 竞争条件！
 
-# Using Lock for safety:
+# 使用 Lock 保证安全：
 lock = threading.Lock()
 def safe_append(items):
     for item in items:
         with lock:
             if item not in shared_list:
                 shared_list.append(item)
-# Forgetting the lock? No compiler warning. Bug discovered in production.
+# 忘记 lock？没有编译器警告。bug 在生产环境发现。
 ```
 
-### Rust — Compile-Time Errors
+### Rust —— 编译时错误
 ```rust
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 fn main() {
-    // Trying to share a Vec across threads without protection:
+    // 尝试在没有保护的情况下跨线程共享 Vec：
     // let shared = vec![];
     // thread::spawn(move || shared.push(1));
-    // ❌ Compile error: Vec is not Send/Sync without protection
+    // ❌ 编译错误：Vec 没有保护不是 Send/Sync
 
-    // With Mutex (Rust's equivalent of threading.Lock):
+    // 使用 Mutex（Rust 的 threading.Lock 等价物）：
     let shared = Arc::new(Mutex::new(Vec::new()));
 
     let handles: Vec<_> = (0..4).map(|i| {
         let shared = Arc::clone(&shared);
         thread::spawn(move || {
-            let mut data = shared.lock().unwrap(); // Lock is REQUIRED to access
+            let mut data = shared.lock().unwrap(); // 需要 Lock 才能访问
             data.push(i);
-            // Lock is automatically released when `data` goes out of scope
-            // No "forgetting to unlock" — RAII guarantees it
+            // `data` 超出作用域时锁自动释放
+            // 不会"忘记解锁" —— RAII 保证
         })
     }).collect();
 
@@ -143,47 +141,47 @@ fn main() {
         h.join().unwrap();
     }
 
-    println!("{:?}", shared.lock().unwrap()); // [0, 1, 2, 3] (order may vary)
+    println!("{:?}", shared.lock().unwrap()); // [0, 1, 2, 3]（顺序可能不同）
 }
 ```
 
-### Send and Sync Traits
+### Send 和 Sync Traits
 ```rust
-// Rust uses two marker traits to enforce thread safety:
+// Rust 使用两个标记 traits 来强制执行线程安全：
 
-// Send — "this type can be transferred to another thread"
-// Most types are Send. Rc<T> is NOT (use Arc<T> for threads).
+// Send —— "这个类型可以转移到另一个线程"
+// 大多数类型是 Send。Rc<T> 不是（对线程使用 Arc<T>）。
 
-// Sync — "this type can be referenced from multiple threads"
-// Most types are Sync. Cell<T>/RefCell<T> are NOT (use Mutex<T>).
+// Sync —— "这个类型可以从多个线程引用"
+// 大多数类型是 Sync。Cell<T>/RefCell<T> 不是（使用 Mutex<T>）。
 
-// The compiler checks these automatically:
+// 编译器自动检查这些：
 // thread::spawn(move || { ... })
-//   ↑ The closure's captures must be Send
-//   ↑ Shared references must be Sync
-//   ↑ If they're not → compile error
+//   ↑ 闭包的捕获必须是 Send
+//   ↑共享引用必须是 Sync
+//   ↑ 如果不是 → 编译错误
 
-// Python has no equivalent. Thread safety bugs are discovered at runtime.
-// Rust catches them at compile time. This is "fearless concurrency."
+// Python 没有等价物。线程安全 bug 在运行时发现。
+// Rust 在编译时捕获它们。这就是"无畏并发"。
 ```
 
-### Concurrency Primitives Comparison
+### 并发原语对比
 
-| Python | Rust | Purpose |
-|--------|------|---------|
-| `threading.Lock()` | `Mutex<T>` | Mutual exclusion |
-| `threading.RLock()` | `Mutex<T>` (no reentrant) | Reentrant lock (use differently) |
-| `threading.RWLock` (N/A) | `RwLock<T>` | Multiple readers OR one writer |
-| `threading.Event()` | `Condvar` | Condition variable |
-| `queue.Queue()` | `mpsc::channel()` | Thread-safe channel |
-| `multiprocessing.Pool` | `rayon::ThreadPool` | Thread pool |
-| `concurrent.futures` | `rayon` / `tokio::spawn` | Task-based parallelism |
-| `threading.local()` | `thread_local!` | Thread-local storage |
-| N/A | `Atomic*` types | Lock-free counters and flags |
+| Python | Rust | 用途 |
+|--------|------|------|
+| `threading.Lock()` | `Mutex<T>` | 互斥 |
+| `threading.RLock()` | `Mutex<T>`（无重入） | 重入锁（不同方式使用） |
+| `threading.RWLock`（N/A） | `RwLock<T>` | 多个读取者或一个写入者 |
+| `threading.Event()` | `Condvar` | 条件变量 |
+| `queue.Queue()` | `mpsc::channel()` | 线程安全 channel |
+| `multiprocessing.Pool` | `rayon::ThreadPool` | 线程池 |
+| `concurrent.futures` | `rayon` / `tokio::spawn` | 基于任务的并行 |
+| `threading.local()` | `thread_local!` | 线程局部存储 |
+| N/A | `Atomic*` 类型 | 无锁计数器和标志 |
 
-### Mutex Poisoning
+### Mutex 中毒
 
-If a thread **panics** while holding a `Mutex`, the lock becomes *poisoned*. Python has no equivalent — if a thread crashes holding a `threading.Lock()`, the lock stays stuck.
+如果线程在持有 `Mutex` 时 **panic**，锁会变成*中毒*状态。Python 没有等价物 —— 如果线程在持有 `threading.Lock()` 时崩溃，锁会保持卡住。
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -195,10 +193,10 @@ let data2 = Arc::clone(&data);
 let _ = thread::spawn(move || {
     let mut guard = data2.lock().unwrap();
     guard.push(4);
-    panic!("oops!");  // Lock is now poisoned
+    panic!("oops!");  // 锁现在已中毒
 }).join();
 
-// Subsequent lock attempts return Err(PoisonError)
+// 后续锁尝试返回 Err(PoisonError)
 match data.lock() {
     Ok(guard) => println!("Data: {guard:?}"),
     Err(poisoned) => {
@@ -209,28 +207,29 @@ match data.lock() {
 }
 ```
 
-### Atomic Ordering (brief note)
+### 原子排序（简要说明）
 
-The `Ordering` parameter on atomic operations controls memory visibility guarantees:
+原子操作上的 `Ordering` 参数控制内存可见性保证：
 
-| Ordering | When to use |
-|----------|-------------|
-| `Relaxed` | Simple counters where ordering doesn't matter |
-| `Acquire`/`Release` | Producer-consumer: writer uses `Release`, reader uses `Acquire` |
-| `SeqCst` | When in doubt — strictest ordering, most intuitive |
+| Ordering | 何时使用 |
+|----------|----------|
+| `Relaxed` | 简单计数器，顺序不重要 |
+| `Acquire`/`Release` | 生产者 - 消费者：写入者使用 `Release`，读取者使用 `Acquire` |
+| `SeqCst` | 不确定时 —— 最严格的顺序，最直观 |
 
-Python's `threading` module hides these details behind the GIL. In Rust, you choose explicitly — use `SeqCst` until profiling shows you need something weaker.
+Python 的 `threading` 模块将这些细节隐藏在 GIL 后面。在 Rust 中，你显式选择 —— 使用 `SeqCst` 直到性能分析显示你需要更弱的。
 
 ***
 
-## async/await Comparison
+***
 
-Python and Rust both have `async`/`await` syntax, but they work very differently
-under the hood.
+## async/await 对比
+
+Python 和 Rust 都有 `async`/`await` 语法，但它们在底层工作方式非常不同。
 
 ### Python async/await
 ```python
-# Python — asyncio for concurrent I/O
+# Python —— asyncio 用于并发 I/O
 import asyncio
 import aiohttp
 
@@ -250,17 +249,17 @@ async def main():
 
 asyncio.run(main())
 
-# Python async is single-threaded (still GIL)!
-# It only helps with I/O-bound work (waiting for network/disk).
-# CPU-bound work in async still blocks the event loop.
+# Python async 是单线程的（仍然有 GIL）！
+# 只对 I/O 绑定工作有帮助（等待网络/磁盘）。
+# CPU 绑定工作在 async 中仍然会阻塞事件循环。
 ```
 
 ### Rust async/await
 ```rust
-// Rust — tokio for concurrent I/O (and CPU parallelism!)
+// Rust —— tokio 用于并发 I/O（以及 CPU 并行！）
 use reqwest;
 use tokio;
-use futures::future::join_all;  // add `futures` to Cargo.toml
+use futures::future::join_all;  // 添加 `futures` 到 Cargo.toml
 
 async fn fetch_url(url: &str) -> Result<String, reqwest::Error> {
     reqwest::get(url).await?.text().await
@@ -271,8 +270,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let urls = vec!["https://example.com", "https://httpbin.org/get"];
 
     let tasks: Vec<_> = urls.iter()
-        .map(|url| tokio::spawn(fetch_url(url)))  // No GIL limitation
-        .collect();                                 // Can use all CPU cores
+        .map(|url| tokio::spawn(fetch_url(url)))  // 无 GIL 限制
+        .collect();                                 // 可以使用所有 CPU 核心
 
     let results = futures::future::join_all(tasks).await;
 
@@ -288,22 +287,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Key Differences
+### 关键差异
 
-| Aspect | Python asyncio | Rust tokio |
-|--------|---------------|------------|
-| GIL | Still applies | No GIL |
-| CPU parallelism | ❌ Single-threaded | ✅ Multi-threaded |
-| Runtime | Built-in (asyncio) | External crate (tokio) |
-| Ecosystem | aiohttp, asyncpg, etc. | reqwest, sqlx, etc. |
-| Performance | Good for I/O | Excellent for I/O AND CPU |
-| Error handling | Exceptions | `Result<T, E>` |
-| Cancellation | `task.cancel()` | Drop the future |
-| Color problem | Sync ↔ async boundary | Same issue exists |
+| 方面 | Python asyncio | Rust tokio |
+|------|---------------|------------|
+| GIL | 仍然适用 | 无 GIL |
+| CPU 并行 | ❌ 单线程 | ✅ 多线程 |
+| 运行时 | 内置（asyncio） | 外部 crate（tokio） |
+| 生态系统 | aiohttp, asyncpg 等 | reqwest, sqlx 等 |
+| 性能 | I/O 良好 | I/O 和 CPU 都优秀 |
+| 错误处理 | 异常 | `Result<T, E>` |
+| 取消 | `task.cancel()` | Drop future |
+| 颜色问题 | 同步 ↔ 异步边界 | 相同问题存在 |
 
-### Simple Parallelism with Rayon
+### 使用 Rayon 的简单并行
 ```python
-# Python — multiprocessing for CPU parallelism
+# Python —— 多进程用于 CPU 并行
 from multiprocessing import Pool
 
 def process_item(item):
@@ -314,47 +313,47 @@ with Pool(8) as pool:
 ```
 
 ```rust
-// Rust — rayon for effortless CPU parallelism (one line change!)
+// Rust —— rayon 用于轻松 CPU 并行（一行修改！）
 use rayon::prelude::*;
 
-// Sequential:
+// 顺序：
 let results: Vec<_> = items.iter().map(|item| heavy_computation(item)).collect();
 
-// Parallel (change .iter() to .par_iter() — that's it!):
+// 并行（修改 .iter() 为 .par_iter() —— 就这样！）：
 let results: Vec<_> = items.par_iter().map(|item| heavy_computation(item)).collect();
 
-// No pickle, no process overhead, no serialization.
-// Rayon automatically distributes work across cores.
+// 无 pickle，无进程开销，无序列化。
+// Rayon 自动跨核心分发工作。
 ```
 
 ---
 
-## 💼 Case Study: Parallel Image Processing Pipeline
+## 💼 案例研究：并行图像处理流水线
 
-A data science team processes 50,000 satellite images nightly. Their Python pipeline uses `multiprocessing.Pool`:
+数据科学团队每晚处理 50,000 张卫星图像。他们的 Python 流水线使用 `multiprocessing.Pool`：
 
 ```python
-# Python — multiprocessing for CPU-bound image work
+# Python —— 多进程用于 CPU 绑定图像工作
 import multiprocessing
 from PIL import Image
 import numpy as np
 
 def process_image(path: str) -> dict:
     img = np.array(Image.open(path))
-    # CPU-intensive: histogram equalization, edge detection, classification
+    # CPU 密集型：直方图均衡化、边缘检测、分类
     histogram = np.histogram(img, bins=256)[0]
-    edges = detect_edges(img)       # ~200ms per image
-    label = classify(edges)          # ~100ms per image
+    edges = detect_edges(img)       # 约 200ms/图像
+    label = classify(edges)          # 约 100ms/图像
     return {"path": path, "label": label, "edge_count": len(edges)}
 
-# Problem: each subprocess copies the full Python interpreter
-# Memory: 50MB per worker × 16 workers = 800MB overhead
-# Startup: 2-3 seconds to fork and pickle arguments
+# 问题：每个子进程复制完整的 Python 解释器
+# 内存：每个 worker 50MB × 16 个 worker = 800MB 开销
+# 启动：2-3 秒用于 fork 和 pickle 参数
 with multiprocessing.Pool(16) as pool:
-    results = pool.map(process_image, image_paths)  # ~4.5 hours for 50k images
+    results = pool.map(process_image, image_paths)  # 50k 图像约 4.5 小时
 ```
 
-**Pain points**: 800MB memory overhead from forking, pickle serialization of arguments/results, GIL prevents using threads, error handling is opaque (exceptions in workers are hard to debug).
+**痛点**：fork 导致 800MB 内存开销，参数/结果的 pickle 序列化，GIL 阻止使用线程，错误处理不透明（worker 中的异常难以调试）。
 
 ```rust
 use rayon::prelude::*;
@@ -407,15 +406,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## Exercises
+## 练习
 
 <details>
-<summary><strong>🏋️ Exercise: Thread-Safe Counter</strong> (click to expand)</summary>
+<summary><strong>🏋️ 练习：线程安全计数器</strong>（点击展开）</summary>
 
-**Challenge**: In Python, you might use `threading.Lock` to protect a shared counter. Translate this to Rust: spawn 10 threads, each incrementing a shared counter 1000 times. Print the final value (should be 10000). Use `Arc<Mutex<u64>>`.
+**挑战**：在 Python 中，你可能使用 `threading.Lock` 保护共享计数器。将其翻译为 Rust：生成 10 个线程，每个线程将共享计数器递增 1000 次。打印最终值（应该是 10000）。使用 `Arc<Mutex<u64>>`。
 
 <details>
-<summary>🔑 Solution</summary>
+<summary>🔑 解决方案</summary>
 
 ```rust
 use std::sync::{Arc, Mutex};
@@ -443,7 +442,7 @@ fn main() {
 }
 ```
 
-**Key takeaway**: `Arc<Mutex<T>>` is Rust's equivalent of Python's `lock = threading.Lock()` + shared variable — but Rust *won't compile* if you forget the `Arc` or `Mutex`. Python happily runs a racy program and gives you wrong answers silently.
+**关键要点**：`Arc<Mutex<T>>` 是 Rust 对 Python 的 `lock = threading.Lock()` + 共享变量的等价物 —— 但 Rust 如果你忘记 `Arc` 或 `Mutex` 就*不会编译*。Python 会 happily 运行有竞争条件的程序并 silently 给你错误答案。
 
 </details>
 </details>

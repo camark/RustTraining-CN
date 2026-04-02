@@ -1,25 +1,25 @@
 # Capstone Project: Async Chat Server
 
-This project integrates patterns from across the book into a single, production-style application. You'll build a **multi-room async chat server** using tokio, channels, streams, graceful shutdown, and proper error handling.
+这个项目将本书中的模式整合到一个单一的生产风格应用程序中。你将构建一个**多房间异步聊天服务器**，使用 tokio、channels、streams、优雅关闭和适当的错误处理。
 
-**Estimated time**: 4–6 hours | **Difficulty**: ★★★
+**估计时间**：4-6 小时 | **难度**：★★★
 
-> **What you'll practice:**
-> - `tokio::spawn` and the `'static` requirement (Ch 8)
-> - Channels: `mpsc` for messages, `broadcast` for rooms, `watch` for shutdown (Ch 8)
-> - Streams: reading lines from TCP connections (Ch 11)
-> - Common pitfalls: cancellation safety, MutexGuard across `.await` (Ch 12)
-> - Production patterns: graceful shutdown, backpressure (Ch 13)
-> - Async traits for pluggable backends (Ch 10)
+> **你将练习：**
+> - `tokio::spawn` 和 `'static` 要求（第 8 章）
+> - Channels：`mpsc` 用于消息，`broadcast` 用于房间，`watch` 用于关闭（第 8 章）
+> - Streams：从 TCP 连接读取行（第 11 章）
+> - 常见陷阱：取消安全性，`.await` 期间的 MutexGuard（第 12 章）
+> - 生产模式：优雅关闭，背压（第 13 章）
+> - 用于可插拔后端的异步 traits（第 10 章）
 
-## The Problem
+## 问题
 
-Build a TCP chat server where:
+构建一个 TCP 聊天服务器，其中：
 
-1. **Clients** connect via TCP and join named rooms
-2. **Messages** are broadcast to all clients in the same room
-3. **Commands**: `/join <room>`, `/nick <name>`, `/rooms`, `/quit`
-4. The server shuts down gracefully on Ctrl+C — finishing in-flight messages
+1. **客户端** 通过 TCP 连接并加入命名的房间
+2. **消息** 广播到同一房间的所有客户端
+3. **命令**：`/join <room>`、`/nick <name>`、`/rooms`、`/quit`
+4. 服务器在 Ctrl+C 时优雅关闭 —— 完成进行中的消息
 
 ```mermaid
 graph LR
@@ -42,9 +42,9 @@ graph LR
     style CTRL fill:#fadbd8,stroke:#e74c3c,color:#000
 ```
 
-## Step 1: Basic TCP Accept Loop
+## 步骤 1：基本 TCP 接受循环
 
-Start with a server that accepts connections and echoes lines back:
+从接受连接并回显行的服务器开始：
 
 ```rust
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -79,11 +79,11 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-**Your job**: Verify this compiles and works with `telnet localhost 8080`.
+**你的工作**：验证这能编译并用 `telnet localhost 8080` 工作。
 
-## Step 2: Room State with Broadcast Channels
+## 步骤 2：带有 Broadcast Channels 的房间状态
 
-Each room is a `broadcast::Sender`. All clients in a room subscribe to receive messages.
+每个房间是一个 `broadcast::Sender`。房间中的所有客户端订阅接收消息。
 
 ```rust
 use std::collections::HashMap;
@@ -95,40 +95,40 @@ type RoomMap = Arc<RwLock<HashMap<String, broadcast::Sender<String>>>>;
 fn get_or_create_room(rooms: &mut HashMap<String, broadcast::Sender<String>>, name: &str) -> broadcast::Sender<String> {
     rooms.entry(name.to_string())
         .or_insert_with(|| {
-            let (tx, _) = broadcast::channel(100); // 100-message buffer
+            let (tx, _) = broadcast::channel(100); // 100 条消息缓冲区
             tx
         })
         .clone()
 }
 ```
 
-**Your job**: Implement room state so that:
-- Clients start in `#general`
-- `/join <room>` switches rooms (unsubscribe from old, subscribe to new)
-- Messages are broadcast to all clients in the sender's current room
+**你的工作**：实现房间状态，以便：
+- 客户端从 `#general` 开始
+- `/join <room>` 切换房间（从旧房间取消订阅，订阅新房间）
+- 消息广播到发送者当前房间的所有客户端
 
 <details>
-<summary>💡 Hint — Client task structure</summary>
+<summary>💡 提示 —— 客户端任务结构</summary>
 
-Each client task needs two concurrent loops:
-1. **Read from TCP** → parse commands or broadcast to room
-2. **Read from broadcast receiver** → write to TCP
+每个客户端任务需要两个并发循环：
+1. **从 TCP 读取** → 解析命令或广播到房间
+2. **从广播接收器读取** → 写入 TCP
 
-Use `tokio::select!` to run both:
+使用 `tokio::select!` 运行两者：
 
 ```rust
 loop {
     tokio::select! {
-        // Client sent us a line
+        // 客户端发送给我们一行
         result = reader.read_line(&mut line) => {
             match result {
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
-                    // Parse command or broadcast message
+                    // 解析命令或广播消息
                 }
             }
         }
-        // Room broadcast received
+        // 房间广播收到
         result = room_rx.recv() => {
             match result {
                 Ok(msg) => {
@@ -143,39 +143,39 @@ loop {
 
 </details>
 
-## Step 3: Commands
+## 步骤 3：命令
 
-Implement the command protocol:
+实现命令协议：
 
-| Command | Action |
-|---------|--------|
-| `/join <room>` | Leave current room, join new room, announce in both |
-| `/nick <name>` | Change display name |
-| `/rooms` | List all active rooms and member counts |
-| `/quit` | Disconnect gracefully |
-| Anything else | Broadcast as a chat message |
+| 命令 | 操作 |
+|------|------|
+| `/join <room>` | 离开当前房间，加入新房间，在两个房间宣布 |
+| `/nick <name>` | 更改显示名称 |
+| `/rooms` | 列出所有活动房间和成员计数 |
+| `/quit` | 优雅断开连接 |
+| 其他任何内容 | 作为聊天消息广播 |
 
-**Your job**: Parse commands from the input line. For `/rooms`, you'll need to read from the `RoomMap` — use `RwLock::read()` to avoid blocking other clients.
+**你的工作**：从输入行解析命令。对于 `/rooms`，你需要从 `RoomMap` 读取 —— 使用 `RwLock::read()` 避免阻塞其他客户端。
 
-## Step 4: Graceful Shutdown
+## 步骤 4：优雅关闭
 
-Add Ctrl+C handling so the server:
-1. Stops accepting new connections
-2. Sends "Server shutting down..." to all rooms
-3. Waits for in-flight messages to drain
-4. Exits cleanly
+添加 Ctrl+C 处理，使服务器：
+1. 停止接受新连接
+2. 发送"Server shutting down..."到所有房间
+3. 等待进行中的消息排空
+4. 干净退出
 
 ```rust
 use tokio::sync::watch;
 
 let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-// In the accept loop:
+// 在接受循环中：
 loop {
     tokio::select! {
         result = listener.accept() => {
             let (socket, addr) = result?;
-            // spawn client task with shutdown_rx.clone()
+            // 生成客户端任务，带 shutdown_rx.clone()
         }
         _ = tokio::signal::ctrl_c() => {
             println!("Shutdown signal received");
@@ -186,45 +186,45 @@ loop {
 }
 ```
 
-**Your job**: Add `shutdown_rx.changed()` to each client's `select!` loop so clients exit when shutdown is signaled.
+**你的工作**：在每个客户端的 `select!` 循环中添加 `shutdown_rx.changed()`，以便客户端在发出关闭信号时退出。
 
-## Step 5: Error Handling and Edge Cases
+## 步骤 5：错误处理和边界情况
 
-Production-harden the server:
+生产强化服务器：
 
-1. **Lagging receivers**: `broadcast::recv()` returns `RecvError::Lagged(n)` if a slow client misses messages. Handle it gracefully (log + continue, don't crash).
-2. **Nickname validation**: Reject empty or too-long nicknames.
-3. **Backpressure**: The broadcast channel buffer is bounded (100). If a client can't keep up, they get the `Lagged` error.
-4. **Timeout**: Disconnect clients that are idle for >5 minutes.
+1. **落后的接收器**：如果慢客户端错过消息，`broadcast::recv()` 返回 `RecvError::Lagged(n)`。优雅处理（记录 + 继续，不要崩溃）。
+2. **昵称验证**：拒绝空或太长的昵称。
+3. **背压**：广播 channel 缓冲区是有界的（100）。如果客户端跟不上，他们得到 `Lagged` 错误。
+4. **超时**：断开空闲 >5 分钟的客户端。
 
 ```rust
 use tokio::time::{timeout, Duration};
 
-// Wrap the read in a timeout:
+// 用超时包装读取：
 match timeout(Duration::from_secs(300), reader.read_line(&mut line)).await {
-    Ok(Ok(0)) | Ok(Err(_)) | Err(_) => break, // EOF, error, or timeout
-    Ok(Ok(_)) => { /* process line */ }
+    Ok(Ok(0)) | Ok(Err(_)) | Err(_) => break, // EOF、错误或超时
+    Ok(Ok(_)) => { /* 处理行 */ }
 }
 ```
 
-## Step 6: Integration Test
+## 步骤 6：集成测试
 
-Write a test that starts the server, connects two clients, and verifies message delivery:
+编写一个测试，启动服务器，连接两个客户端，并验证消息传递：
 
 ```rust
 #[tokio::test]
 async fn two_clients_can_chat() {
-    // Start server in background
-    let server = tokio::spawn(run_server("127.0.0.1:0")); // Port 0 = OS picks
+    // 在后台启动服务器
+    let server = tokio::spawn(run_server("127.0.0.1:0")); // 端口 0 = OS 选择
 
-    // Connect two clients
+    // 连接两个客户端
     let mut client1 = TcpStream::connect(addr).await.unwrap();
     let mut client2 = TcpStream::connect(addr).await.unwrap();
 
-    // Client 1 sends a message
+    // 客户端 1 发送消息
     client1.write_all(b"Hello from client 1\n").await.unwrap();
 
-    // Client 2 should receive it
+    // 客户端 2 应该收到它
     let mut buf = vec![0u8; 1024];
     let n = client2.read(&mut buf).await.unwrap();
     let msg = String::from_utf8_lossy(&buf[..n]);
@@ -232,25 +232,25 @@ async fn two_clients_can_chat() {
 }
 ```
 
-## Evaluation Criteria
+## 评估标准
 
-| Criterion | Target |
-|-----------|--------|
-| Concurrency | Multiple clients in multiple rooms, no blocking |
-| Correctness | Messages only go to clients in the same room |
-| Graceful shutdown | Ctrl+C drains messages and exits cleanly |
-| Error handling | Lagged receivers, disconnections, timeouts handled |
-| Code organization | Clean separation: accept loop, client task, room state |
-| Testing | At least 2 integration tests |
+| 标准 | 目标 |
+|------|------|
+| 并发 | 多个房间中的多个客户端，无阻塞 |
+| 正确性 | 消息只发送到同一房间中的客户端 |
+| 优雅关闭 | Ctrl+C 排空消息并干净退出 |
+| 错误处理 | 处理落后接收器、断开连接、超时 |
+| 代码组织 | 清晰的分离：接受循环、客户端任务、房间状态 |
+| 测试 | 至少 2 个集成测试 |
 
-## Extension Ideas
+## 扩展想法
 
-Once the basic chat server works, try these enhancements:
+一旦基本聊天服务器工作，尝试这些增强：
 
-1. **Persistent history**: Store last N messages per room; replay to new joiners
-2. **WebSocket support**: Accept both TCP and WebSocket clients using `tokio-tungstenite`
-3. **Rate limiting**: Use `tokio::time::Interval` to limit messages per client per second
-4. **Metrics**: Track connected clients, messages/sec, room count via `prometheus` crate
-5. **TLS**: Add `tokio-rustls` for encrypted connections
+1. **持久历史**：存储每个房间的最后 N 条消息；重放给新加入者
+2. **WebSocket 支持**：使用 `tokio-tungstenite` 接受 TCP 和 WebSocket 客户端
+3. **速率限制**：使用 `tokio::time::Interval` 限制每个客户端每秒的消息数
+4. **指标**：通过 `prometheus` crate 跟踪连接的客户端、消息/秒、房间计数
+5. **TLS**：添加 `tokio-rustls` 用于加密连接
 
 ***

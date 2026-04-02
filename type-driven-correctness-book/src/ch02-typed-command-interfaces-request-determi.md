@@ -1,14 +1,12 @@
-# Typed Command Interfaces — Request Determines Response 🟡
+# 类型化命令接口 —— 请求决定响应 🟡
 
-> **What you'll learn:** How associated types on a command trait create a compile-time binding between request and response, eliminating mismatched parsing, unit confusion, and silent type coercion across IPMI, Redfish, and NVMe protocols.
+> **你将学到什么：** 命令 trait 上的关联类型如何在请求和响应之间创建编译时绑定，消除 IPMI、Redfish 和 NVMe 协议中的不匹配解析、单位混淆和静默类型强制。
 >
-> **Cross-references:** [ch01](ch01-the-philosophy-why-types-beat-tests.md) (philosophy), [ch06](ch06-dimensional-analysis-making-the-compiler.md) (dimensional types), [ch07](ch07-validated-boundaries-parse-dont-validate.md) (validated boundaries), [ch10](ch10-putting-it-all-together-a-complete-diagn.md) (integration)
+> **交叉引用**：[第 1 章](ch01-the-philosophy-why-types-beat-tests.md)（理念）、[第 6 章](ch06-dimensional-analysis-making-the-compiler.md)（量纲类型）、[第 7 章](ch07-validated-boundaries-parse-dont-validate.md)（验证边界）、[第 10 章](ch10-putting-it-all-together-a-complete-diagn.md)（集成）
 
-## The Untyped Swamp
+## 无类型沼泽
 
-Most hardware management stacks — IPMI, Redfish, NVMe Admin, PLDM — start life as
-`raw bytes in → raw bytes out`. This creates a category of bugs that tests can only
-partially find:
+大多数硬件管理栈 —— IPMI、Redfish、NVMe Admin、PLDM —— 最初都是 `raw bytes in → raw bytes out`。这创建了一类测试只能部分发现的 bug：
 
 ```rust,ignore
 use std::io;
@@ -24,44 +22,44 @@ impl BmcRaw {
 
 fn diagnose_thermal(bmc: &BmcRaw) -> io::Result<()> {
     let raw = bmc.raw_command(0x04, 0x2D, &[0x20])?;
-    let cpu_temp = raw[0] as f64;        // 🤞 is byte 0 the reading?
+    let cpu_temp = raw[0] as f64;        // 🤞 字节 0 是读数吗？
 
     let raw = bmc.raw_command(0x04, 0x2D, &[0x30])?;
-    let fan_rpm = raw[0] as u32;         // 🐛 fan speed is 2 bytes LE
+    let fan_rpm = raw[0] as u32;         // 🐛 风扇速度是 2 字节 LE
 
     let raw = bmc.raw_command(0x04, 0x2D, &[0x40])?;
-    let voltage = raw[0] as f64;         // 🐛 need to divide by 1000
+    let voltage = raw[0] as f64;         // 🐛 需要除以 1000
 
-    if cpu_temp > fan_rpm as f64 {       // 🐛 comparing °C to RPM
+    if cpu_temp > fan_rpm as f64 {       // 🐛 比较°C 和 RPM
         println!("uh oh");
     }
 
-    log_temp(voltage);                   // 🐛 passing Volts as temperature
+    log_temp(voltage);                   // 🐛 传递伏特作为温度
     Ok(())
 }
 
 fn log_temp(t: f64) { println!("Temp: {t}°C"); }
 ```
 
-| # | Bug | Discovered |
-|---|-----|------------|
-| 1 | Fan RPM parsed as 1 byte instead of 2 | Production, 3 AM |
-| 2 | Voltage not scaled | Every PSU flagged as overvoltage |
-| 3 | Comparing °C to RPM | Maybe never |
-| 4 | Volts passed to temp logger | 6 months later, reading historical data |
+| # | Bug | 发现时间 |
+|---|-----|----------|
+| 1 | 风扇 RPM 解析为 1 字节而不是 2 | 生产环境，凌晨 3 点 |
+| 2 | 电压未缩放 | 每个 PSU 标记为过压 |
+| 3 | 比较°C 和 RPM | 可能永远不会 |
+| 4 | 伏特传递给温度记录器 | 6 个月后，读取历史数据时 |
 
-**Root cause:** Everything is `Vec<u8>` → `f64` → pray.
+**根本原因：** 一切都是 `Vec<u8>` → `f64` → 祈祷。
 
-## The Typed Command Pattern
+## 类型化命令模式
 
-### Step 1 — Domain newtypes
+### 步骤 1 —— 领域新类型
 
 ```rust,ignore
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Celsius(pub f64);
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Rpm(pub u32);  // u32: raw IPMI sensor value (integer RPM)
+pub struct Rpm(pub u32);  // u32：原始 IPMI 传感器值（整数 RPM）
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Volts(pub f64);
@@ -70,32 +68,27 @@ pub struct Volts(pub f64);
 pub struct Watts(pub f64);
 ```
 
-> **Note on `Rpm(u32)` vs `Rpm(f64)`:** In this chapter the inner type is `u32`
-> because IPMI sensor readings are integer values. In ch06 (Dimensional Analysis),
-> `Rpm` uses `f64` to support arithmetic operations (averaging, scaling). Both
-> are valid — the newtype prevents cross-unit confusion regardless of inner type.
+> **关于 `Rpm(u32)` vs `Rpm(f64)` 的说明：** 本章中内部类型是 `u32`，因为 IPMI 传感器读数是整数值。在第 6 章（量纲分析）中，`Rpm` 使用 `f64` 支持算术运算（平均、缩放）。两者都有效 —— 无论内部类型如何，新类型都能防止跨单位混淆。
 
-### Step 2 — The command trait (type-indexed dispatch)
+### 步骤 2 —— 命令 trait（类型索引分发）
 
-The associated type `Response` is the key — it binds each command struct to its
-return type.  Each implementing struct pins `Response` to a specific domain type,
-so `execute()` always returns exactly the right type:
+关联类型 `Response` 是关键 —— 它将每个命令结构绑定到其返回类型。每个实现结构将 `Response` 固定到特定的领域类型，因此 `execute()` 总是返回完全正确的类型：
 
 ```rust,ignore
 pub trait IpmiCmd {
-    /// The "type index" — determines what execute() returns.
+    /// "类型索引" —— 决定 execute() 返回什么。
     type Response;
 
     fn net_fn(&self) -> u8;
     fn cmd_byte(&self) -> u8;
     fn payload(&self) -> Vec<u8>;
 
-    /// Parsing encapsulated here — each command knows its own byte layout.
+    /// 解析封装在这里 —— 每个命令知道自己的字节布局。
     fn parse_response(&self, raw: &[u8]) -> io::Result<Self::Response>;
 }
 ```
 
-### Step 3 — One struct per command
+### 步骤 3 —— 每个命令一个结构
 
 ```rust,ignore
 pub struct ReadTemp { pub sensor_id: u8 }
@@ -108,13 +101,11 @@ impl IpmiCmd for ReadTemp {
         if raw.is_empty() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "empty response"));
         }
-        // Note: ch01's untyped example uses `raw[0] as i8 as f64` (signed)
-        // because that function was demonstrating generic parsing without
-        // SDR metadata. Here we use unsigned (`as f64`) because the SDR
-        // linearization formula in IPMI spec §35.5 converts the unsigned
-        // raw reading to a calibrated value. In production, apply the
-        // full SDR formula: result = (M × raw + B) × 10^(R_exp).
-        Ok(Celsius(raw[0] as f64))  // unsigned raw byte, converted per SDR formula
+        // 注意：第 1 章的无类型示例使用 `raw[0] as i8 as f64`（有符号）
+        // 因为该函数演示没有 SDR 元数据的通用解析。这里我们使用无符号（`as f64`），
+        // 因为 IPMI 规范 §35.5 中的 SDR 线性化公式将无符号原始读数转换为校准值。
+        // 在生产环境中，应用完整的 SDR 公式：result = (M × raw + B) × 10^(R_exp)。
+        Ok(Celsius(raw[0] as f64))  // 无符号原始字节，根据 SDR 公式转换
     }
 }
 
@@ -149,7 +140,7 @@ impl IpmiCmd for ReadVoltage {
 }
 ```
 
-### Step 4 — The executor (zero `dyn`, monomorphised)
+### 步骤 4 —— 执行器（零 `dyn`，单体化）
 
 ```rust,ignore
 pub struct BmcConnection { pub timeout_secs: u32 }
@@ -166,7 +157,7 @@ impl BmcConnection {
 }
 ```
 
-### Step 5 — All four bugs become compile errors
+### 步骤 5 —— 所有四个 bug 变成编译错误
 
 ```rust,ignore
 fn diagnose_thermal_typed(bmc: &BmcConnection) -> io::Result<()> {
@@ -174,14 +165,14 @@ fn diagnose_thermal_typed(bmc: &BmcConnection) -> io::Result<()> {
     let fan_rpm:  Rpm     = bmc.execute(&ReadFanSpeed { fan_id: 0x30 })?;
     let voltage:  Volts   = bmc.execute(&ReadVoltage { rail: 0x40 })?;
 
-    // Bug #1 — IMPOSSIBLE: parsing lives in ReadFanSpeed::parse_response
-    // Bug #2 — IMPOSSIBLE: unit scaling lives in ReadVoltage::parse_response
+    // Bug #1 —— 不可能：解析逻辑在 ReadFanSpeed::parse_response 中
+    // Bug #2 —— 不可能：单位缩放在 ReadVoltage::parse_response 中
 
-    // Bug #3 — COMPILE ERROR:
+    // Bug #3 —— 编译错误：
     // if cpu_temp > fan_rpm { }
     //    ^^^^^^^^   ^^^^^^^ Celsius vs Rpm → "mismatched types" ❌
 
-    // Bug #4 — COMPILE ERROR:
+    // Bug #4 —— 编译错误：
     // log_temperature(voltage);
     //                 ^^^^^^^ Volts, expected Celsius ❌
 
@@ -195,9 +186,9 @@ fn log_temperature(t: Celsius) { println!("Temp: {:?}", t); }
 fn log_voltage(v: Volts)       { println!("Voltage: {:?}", v); }
 ```
 
-## IPMI: Sensor Reads That Can't Be Confused
+## IPMI：无法混淆的传感器读取
 
-Adding a new sensor is one struct + one impl — no scattered parsing:
+添加新传感器就是一个结构体 + 一个实现 —— 无需分散的解析：
 
 ```rust,ignore
 pub struct ReadPowerDraw { pub domain: u8 }
@@ -215,11 +206,11 @@ impl IpmiCmd for ReadPowerDraw {
     }
 }
 
-// Every caller that uses bmc.execute(&ReadPowerDraw { domain: 0 })
-// automatically gets Watts back — no parsing code elsewhere
+// 每个使用 bmc.execute(&ReadPowerDraw { domain: 0 }) 的调用者
+// 自动获得 Watts 返回 —— 无需其他地方的解析代码
 ```
 
-### Testing Each Command in Isolation
+### 隔离测试每个命令
 
 ```rust,ignore
 #[cfg(test)]
@@ -242,7 +233,7 @@ mod tests {
     #[test]
     fn read_temp_parses_raw_byte() {
         let bmc = StubBmc {
-            responses: [(0x20, vec![0x19])].into(), // 25 decimal = 0x19
+            responses: [(0x20, vec![0x19])].into(), // 25 十进制 = 0x19
         };
         let temp = bmc.execute(&ReadTemp { sensor_id: 0x20 }).unwrap();
         assert_eq!(temp, Celsius(25.0));
@@ -268,9 +259,9 @@ mod tests {
 }
 ```
 
-## Redfish: Schema-Typed REST Endpoints
+## Redfish：模式类型的 REST 端点
 
-Redfish is an even better fit — each endpoint returns a DMTF-defined JSON schema:
+Redfish 甚至更合适 —— 每个端点返回 DMTF 定义的 JSON 模式：
 
 ```rust,ignore
 use serde::Deserialize;
@@ -351,7 +342,7 @@ pub struct RedfishHealth {
     pub health: Option<String>,
 }
 
-/// Typed Redfish endpoint — each knows its response type.
+/// 类型化 Redfish 端点 —— 每个都知道其响应类型。
 pub trait RedfishEndpoint {
     type Response: serde::de::DeserializeOwned;
     fn method(&self) -> &'static str;
@@ -403,7 +394,7 @@ impl RedfishClient {
     }
 }
 
-// Usage — fully typed, self-documenting
+// 用法 —— 完全类型化，自文档化
 fn redfish_pre_flight(client: &RedfishClient) -> io::Result<()> {
     let thermal: ThermalResponse = client.execute(&GetThermal {
         chassis_id: "1".into(),
@@ -412,8 +403,8 @@ fn redfish_pre_flight(client: &RedfishClient) -> io::Result<()> {
         chassis_id: "1".into(),
     })?;
 
-    // ❌ Compile error — can't pass PowerResponse to a thermal check:
-    // check_thermals(&power);  → "expected ThermalResponse, found PowerResponse"
+    // ❌ 编译错误 —— 不能将 PowerResponse 传递给温度检查：
+    // check_thermals(&power); → "expected ThermalResponse, found PowerResponse"
 
     for temp in &thermal.temperatures {
         if let Some(crit) = temp.critical_hi {
