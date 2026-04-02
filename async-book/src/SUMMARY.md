@@ -1,40 +1,40 @@
-# Summary
+# 总结
 
-[Introduction](ch00-introduction.md)
-
----
-
-# Part I: How Async Works
-
-- [1. Why Async is Different in Rust](ch01-why-async-is-different-in-rust.md)
-- [2. The Future Trait](ch02-the-future-trait.md)
-- [3. How Poll Works](ch03-how-poll-works.md)
-- [4. Pin and Unpin](ch04-pin-and-unpin.md)
-- [5. The State Machine Reveal](ch05-the-state-machine-reveal.md)
+[简介](ch00-introduction.md)
 
 ---
 
-# Part II: The Ecosystem
+# 第一部分 —— 异步工作原理
 
-- [6. Building Futures by Hand](ch06-building-futures-by-hand.md)
-- [7. Executors and Runtimes](ch07-executors-and-runtimes.md)
-- [8. Tokio Deep Dive](ch08-tokio-deep-dive.md)
-- [9. When Tokio Isn't the Right Fit](ch09-when-tokio-isnt-the-right-fit.md)
+- [1. 为什么 Rust 的异步与众不同](ch01-why-async-is-different-in-rust.md)
+- [2. Future Trait](ch02-the-future-trait.md)
+- [3. Poll 如何工作](ch03-how-poll-works.md)
+- [4. Pin 和 Unpin](ch04-pin-and-unpin.md)
+- [5. 状态机揭示](ch05-the-state-machine-reveal.md)
+
+---
+
+# 第二部分 —— 生态系统
+
+- [6. 手动构建 Future](ch06-building-futures-by-hand.md)
+- [7. 执行器和运行时](ch07-executors-and-runtimes.md)
+- [8. Tokio 深入探讨](ch08-tokio-deep-dive.md)
+- [9. 何时 Tokio 不是最佳选择](ch09-when-tokio-isnt-the-right-fit.md)
 - [10. Async Traits](ch10-async-traits.md)
 
 ---
 
-# Part III: Production Async
+# 第三部分 —— 生产级异步
 
-- [11. Streams and AsyncIterator](ch11-streams-and-asynciterator.md)
-- [12. Common Pitfalls](ch12-common-pitfalls.md)
-- [13. Production Patterns](ch13-production-patterns.md)
-- [14. Async Is an Optimization, Not an Architecture](ch14-async-is-an-optimization-not-an-architecture.md)
-- [15. Exercises](ch15-exercises.md)
+- [11. Streams 和 AsyncIterator](ch11-streams-and-asynciterator.md)
+- [12. 常见陷阱](ch12-common-pitfalls.md)
+- [13. 生产模式](ch13-production-patterns.md)
+- [14. 异步是优化，不是架构](ch14-async-is-an-optimization-not-an-architecture.md)
+- [15. 练习](ch15-exercises.md)
 
 ---
 
-# Appendices
+# 附录
 
-- [Summary and Reference Card](ch16-summary-and-reference-card.md)
-- [Capstone Project: Async Chat Server](ch17-capstone-project.md)
+- [总结和参考卡片](ch16-summary-and-reference-card.md)
+- [综合项目：异步聊天服务器](ch17-capstone-project.md)
